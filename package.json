@@ -7,7 +7,7 @@
     "dev": "vite --port=3000",
     "dev:lan": "vite --port=3000 --host=0.0.0.0",
     "build": "vite build",
-    "build:userscript": "vite build --config vite.userscript.config.ts",
+    "build:extension": "vite build --config vite.extension.config.ts",
     "preview": "vite preview",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "lint": "tsc --noEmit"

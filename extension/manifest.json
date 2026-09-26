@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "PokeIdleLab",
+  "version": "1.1.0",
+  "description": "Tier list, calculadoras, optimizador de XP y objetos dentro de Poke Idle World, con el Analyzer de IV y el aviso de ventas.",
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://poke.idleworld.online/*"
+      ],
+      "js": [
+        "pokeidlelab.user.js"
+      ],
+      "run_at": "document_idle",
+      "world": "MAIN"
+    }
+  ]
+}
