@@ -38,15 +38,31 @@ if not exist "package.json" (
   exit /b 1
 )
 
-if not exist "node_modules" (
-  echo Instalando dependencias ^(solo la primera vez, puede tardar unos minutos^)...
-  call npm install --legacy-peer-deps
+rem Reinstala si falta node_modules o si la actualizacion cambio package-lock.json.
+set "NEED_INSTALL="
+if not exist "node_modules" set "NEED_INSTALL=1"
+set "LOCK_HASH=sin-lockfile"
+if exist "package-lock.json" (
+  for /f "usebackq delims=" %%h in (`powershell.exe -NoProfile -Command "(Get-FileHash -Algorithm SHA256 -LiteralPath 'package-lock.json').Hash"`) do set "LOCK_HASH=%%h"
+)
+set "SAVED_HASH="
+if exist "node_modules\.pokeidle-lock-hash" set /p SAVED_HASH=<"node_modules\.pokeidle-lock-hash"
+if not "%LOCK_HASH%"=="%SAVED_HASH%" set "NEED_INSTALL=1"
+
+if defined NEED_INSTALL (
+  echo Instalando dependencias ^(la primera vez o tras una actualizacion, puede tardar unos minutos^)...
+  if exist "package-lock.json" (
+    call npm ci --legacy-peer-deps
+  ) else (
+    call npm install --legacy-peer-deps
+  )
   if errorlevel 1 (
     echo.
-    echo [ERROR] Fallo npm install. Revisa el mensaje de arriba.
+    echo [ERROR] Fallo la instalacion de dependencias. Revisa el mensaje de arriba.
     pause
     exit /b 1
   )
+  >"node_modules\.pokeidle-lock-hash" echo %LOCK_HASH%
 )
 
 echo.

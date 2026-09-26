@@ -11,7 +11,8 @@ export default defineConfig(() => {
       },
     },
     server: {
-      host: '0.0.0.0',
+      // Solo esta PC. Para abrirla desde otro dispositivo: npm run dev:lan
+      host: 'localhost',
       port: 3000,
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
       // Do not modify - file watching is disabled to prevent flickering during agent edits.
