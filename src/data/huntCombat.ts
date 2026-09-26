@@ -12,8 +12,7 @@ import {
 
 /**
  * Cadencia real de Hunt Analyzer.
- * Las sesiones reales aportan segundos por derrota; las muestras conocidas
- * se conservan como referencias y el resto usa un modelo continuo calibrado.
+ * Las sesiones reales aportan segundos por derrota; el resto usa modelo continuo.
  */
 export const REAL_HUNT_REFERENCE_CYCLE_SECONDS = 8.70;
 export const REAL_HUNT_REFERENCE_WALK_SECONDS = 7.00;
@@ -166,14 +165,13 @@ export function projectHuntCombat(
   const finalDamagePerHit = Math.max(1, Math.round(selected.continuousDamagePerHit));
   const effectiveBulk = Math.round(wildMaxHp * (selected.targetDefense / 50));
   const hitsToKill = Math.max(1, Math.ceil(wildMaxHp / finalDamagePerHit));
+  // En Hunt los ataques ocurren de uno en uno: el tiempo depende de golpes enteros.
   const continuousHitsToKill = Math.max(
-    0.1,
+    1,
     wildMaxHp / selected.continuousDamagePerHit
   );
-  const combatTimeSeconds = Math.max(
-    attackIntervalSeconds,
-    continuousHitsToKill * attackIntervalSeconds
-  );
+  const combatHitsToKill = Math.max(1, Math.ceil(continuousHitsToKill));
+  const combatTimeSeconds = combatHitsToKill * attackIntervalSeconds;
 
   const calibration = getHuntCalibration(target.id, wildLevel);
   const realCalibratedCycleSeconds =
@@ -181,7 +179,6 @@ export function projectHuntCombat(
       ? calibration.cycleSeconds
       : undefined;
 
-  // La referencia de 8.70 s es solo una muestra histórica, no un mínimo global.
   const fallbackCycleSeconds =
     REAL_HUNT_REFERENCE_WALK_SECONDS + combatTimeSeconds;
   const normalCycleSeconds = Math.max(
