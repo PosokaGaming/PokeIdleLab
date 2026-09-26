@@ -81,6 +81,7 @@ export const Header: React.FC<HeaderProps> = ({
             href="https://poke.idleworld.online/"
             target="_blank"
             rel="noopener noreferrer"
+            data-web-only
             className="hidden sm:inline-flex items-center text-xs font-medium text-slate-400 hover:text-slate-200 transition-colors"
           >
             Jugar Oficial ↗

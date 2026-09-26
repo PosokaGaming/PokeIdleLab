@@ -13,6 +13,10 @@
 (function () {
   "use strict";
 
+  // La extensión PokeIdleLab trae este mismo aviso: si ya corre, no duplicarlo.
+  if (window.__POKEIDLELAB_MARKET_SALES__) return;
+  window.__POKEIDLELAB_MARKET_SALES__ = true;
+
   const CFG = {
     id: "pokeidlelab-market-sale-toast",
     duration: 5000,

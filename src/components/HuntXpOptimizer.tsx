@@ -355,7 +355,8 @@ const SpeciesSelect: React.FC<{ value: number; onChange: (id: number) => void }>
 
   useEffect(() => {
     const close = (e: MouseEvent) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+      // composedPath: dentro de la extensión (Shadow DOM) e.target es el host, no el nodo clicado.
+      if (wrapRef.current && !e.composedPath().includes(wrapRef.current)) setOpen(false);
     };
     document.addEventListener('mousedown', close);
     return () => document.removeEventListener('mousedown', close);

@@ -10,6 +10,8 @@
 // @run-at       document-idle
 // ==/UserScript==
 (function(){"use strict";
+// La extensión PokeIdleLab trae este mismo Analyzer: si ya corre, no duplicarlo.
+if(window.__POKEIDLELAB_ANALYZER__)return;window.__POKEIDLELAB_ANALYZER__=true;
 const CFG={panelId:"pokeidlelab-iv-panel",storageKey:"pokeidlelab-iv-panel-state",maxIV:32,maxTotal:192,exponents:{hp:.95,atk:.8,def:.8,spa:.8,spd:.8,vel:.95},statLabels:{hp:"HP",atk:"ATK",def:"DEF",spa:"SpA",spd:"SpD",vel:"VEL"},colors:{hp:"#55e6d3",atk:"#ff8c42",def:"#ffd84f",spa:"#5ca9ff",spd:"#55e6d3",vel:"#ff70b8"}};
 let creatures=[],current=null,lastText="",lastPokemonTooltip=null;
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])),norm=s=>String(s||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/shiny/g,"").replace(/[^a-z0-9]+/g," ").trim();
