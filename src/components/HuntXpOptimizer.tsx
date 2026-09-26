@@ -760,7 +760,7 @@ export const HuntXpOptimizer: React.FC<HuntXpOptimizerProps> = ({
 
       const timeToKillSeconds = +Math.max(
         0.6,
-        combat.totalCycleSeconds - REAL_HUNT_REFERENCE_WALK_SECONDS
+        combat.totalCycleSeconds - HUNT_REFERENCE_WALK_SECONDS
       ).toFixed(1);
       const wildHitsDealt =
         combat.hitsToKill === 1 ? 0 : Math.max(0, Math.floor(timeToKillSeconds / 1.5));
