@@ -33,7 +33,14 @@ import {
 } from 'lucide-react';
 import { POKEMON_TIER_DATA, OfficialPokemon } from '../data/pokemonTierData';
 import { ITEMS_DATA } from '../data/itemsData';
-import { getHuntCalibration, installHuntCalibrationBridge } from '../data/huntCalibration';
+import {
+  CALIBRATION_UPDATED_EVENT,
+  getHuntCalibration,
+  getHuntCalibrationSamples,
+  getXpBonusMultiplier,
+  installHuntCalibrationBridge,
+  HuntCalibration
+} from '../data/huntCalibration';
 import { HuntCalibrationPanel } from './HuntCalibrationPanel';
 import {
   calculateStat,
@@ -65,7 +72,7 @@ export type SortField =
   | 'xpPerKill'
   | 'wildLevel'
   | 'potionSafety'
-  | 'netProfit';
+  | 'lootPerHour';
 
 export type SortDirection = 'asc' | 'desc';
 
@@ -86,6 +93,17 @@ const POKEGRID_TM_TARGETS = 2;
 const REAL_HUNT_AOE_TARGET_MULTIPLIER = 16.5 / 14;
 
 type HuntMove = OfficialPokemon['attacks'][number] & { isCustom?: boolean };
+
+const XP_BONUS_STORAGE_KEY = 'pokeidle_xp_bonuses_v1';
+
+function readXpBonuses(): { vip: boolean; event: boolean } {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(XP_BONUS_STORAGE_KEY) || '{}');
+    return { vip: parsed?.vip === true, event: parsed?.event === true };
+  } catch {
+    return { vip: false, event: false };
+  }
+}
 
 interface HuntCombatProjection {
   wildMaxHp: number;
@@ -134,7 +152,8 @@ function projectHuntCombat(
   hasAoeBonus: boolean,
   hasElementalTm: boolean,
   elementalTmType: string,
-  forcedMove?: HuntMove
+  forcedMove: HuntMove | undefined,
+  calibration: HuntCalibration | null
 ): HuntCombatProjection {
   const statGrowth = ivTotal / 6;
   const clanMatches =
@@ -239,7 +258,9 @@ function projectHuntCombat(
   // porque determina el daño por golpe y, por tanto, los golpes necesarios.
   const combatTimeSeconds = hitsToKill * attackIntervalSeconds;
 
-  const calibration = getHuntCalibration(target.id, wildLevel);
+  // Una sesión real fija el ciclo con el combate de referencia (0,6 s) y el
+  // daño del atacante lo desplaza. El ciclo de respaldo ya incluye el combate
+  // propio: sumarle también el delta contaba el combate dos veces.
   const calibratedCycleSeconds = calibration?.cycleSeconds;
   const fallbackCycleSeconds = Math.max(
     REAL_HUNT_REFERENCE_CYCLE_SECONDS,
@@ -247,13 +268,11 @@ function projectHuntCombat(
   );
   const combatDeltaSeconds =
     combatTimeSeconds - REAL_HUNT_REFERENCE_COMBAT_SECONDS;
-  const calibratedBaseCycle =
-    calibratedCycleSeconds !== undefined
-      ? calibratedCycleSeconds
-      : fallbackCycleSeconds;
   const normalCycleSeconds = Math.max(
     0.6,
-    calibratedBaseCycle + combatDeltaSeconds
+    calibratedCycleSeconds !== undefined
+      ? calibratedCycleSeconds + combatDeltaSeconds
+      : fallbackCycleSeconds
   );
   const aoeTargetMultiplier = hasAoeBonus
     ? REAL_HUNT_AOE_TARGET_MULTIPLIER
@@ -433,8 +452,25 @@ export const HuntXpOptimizer: React.FC<HuntXpOptimizerProps> = ({
   const [clanType, setClanType] = useState<string>('NONE');
   const [hasAoeBonus, setHasAoeBonus] = useState<boolean>(false); // Sin TM de área por defecto
   const [hasElementalTm, setHasElementalTm] = useState<boolean>(false);
-  const [isVipBonus, setIsVipBonus] = useState<boolean>(true); // Cuenta VIP / Boost (+50% EXP como en sesión de 136k XP/h)
-  const [hasDoubleXpEvent, setHasDoubleXpEvent] = useState<boolean>(true); // Evento activo: XP x2 para Entrenador y Pokémon
+  // VIP y evento arrancan apagados (el evento es temporal) y se recuerda la
+  // elección de cada usuario: con los dos encendidos la XP sale ×2,5.
+  const [isVipBonus, setIsVipBonus] = useState<boolean>(() => readXpBonuses().vip);
+  const [hasDoubleXpEvent, setHasDoubleXpEvent] = useState<boolean>(() => readXpBonuses().event);
+  useEffect(() => {
+    try {
+      localStorage.setItem(XP_BONUS_STORAGE_KEY, JSON.stringify({ vip: isVipBonus, event: hasDoubleXpEvent }));
+    } catch {}
+  }, [isVipBonus, hasDoubleXpEvent]);
+  const xpBonusMultiplier = getXpBonusMultiplier(isVipBonus, hasDoubleXpEvent);
+
+  // Las sesiones reales se leen de localStorage una vez por cambio, no por especie.
+  const [calibrationVersion, setCalibrationVersion] = useState(0);
+  useEffect(() => {
+    const onUpdate = () => setCalibrationVersion((v) => v + 1);
+    window.addEventListener(CALIBRATION_UPDATED_EVENT, onUpdate);
+    return () => window.removeEventListener(CALIBRATION_UPDATED_EVENT, onUpdate);
+  }, []);
+  const calibrationSamples = useMemo(() => getHuntCalibrationSamples(), [calibrationVersion]);
 
   // Level Restriction Rule: Player level restricts hunts accessible
   const [restrictToPlayerLevel, setRestrictToPlayerLevel] = useState<boolean>(true);
@@ -667,6 +703,8 @@ export const HuntXpOptimizer: React.FC<HuntXpOptimizerProps> = ({
           : undefined;
 
     return POKEMON_TIER_DATA.map((target) => {
+      const wildLevel = target.huntLevel || 50;
+      const calibration = getHuntCalibration(target.id, wildLevel, calibrationSamples);
       const combat = projectHuntCombat(
         attackerPokemon,
         target,
@@ -678,10 +716,10 @@ export const HuntXpOptimizer: React.FC<HuntXpOptimizerProps> = ({
         hasAoeBonus,
         hasElementalTm,
         elementalTmType,
-        forcedMove
+        forcedMove,
+        calibration
       );
 
-      const wildLevel = target.huntLevel || 50;
       const isLevelLocked = wildLevel > playerLevel;
       // Tipo del Día es un bonus EXPLÍCITO y opt-in:
       // - NONE (valor inicial) = 0% para TODAS las especies.
@@ -700,14 +738,12 @@ export const HuntXpOptimizer: React.FC<HuntXpOptimizerProps> = ({
         selectedDailyType !== null &&
         (targetType1 === selectedDailyType || targetType2 === selectedDailyType);
       const dailyXpMult = hasDailyTypeBonus ? 1.2 : 1;
-      const vipXpMult = isVipBonus ? 1.5 : 1;
-      const eventXpMult = hasDoubleXpEvent ? 2 : 1;
-      const baseXp = target.experience * vipXpMult * eventXpMult;
-      const calibration = getHuntCalibration(target.id, wildLevel);
+      // La XP calibrada se guarda sin bonus: VIP y evento se reaplican siempre,
+      // así apagarlos baja también las presas con sesión real.
       const calibratedXpPerKill =
-        calibration?.xpPerKill !== undefined
-          ? calibration.xpPerKill * dailyXpMult
-          : baseXp * dailyXpMult * XP_CALIBRATION_FACTOR;
+        calibration?.baseXpPerKill !== undefined
+          ? calibration.baseXpPerKill * xpBonusMultiplier * dailyXpMult
+          : target.experience * xpBonusMultiplier * dailyXpMult * XP_CALIBRATION_FACTOR;
       const xpPerKill = Math.round(calibratedXpPerKill);
       const xpPerHourExact =
         combat.killsPerHourExact *
@@ -766,8 +802,6 @@ export const HuntXpOptimizer: React.FC<HuntXpOptimizerProps> = ({
         }
       }
 
-      const captureValuePerKill = (target.priceNpc || 1500) / 47;
-      const captureValuePerHour = Math.round(combat.killsPerHourExact * captureValuePerKill);
       // El +20% de loot usa exactamente la misma condición que el +20% XP:
       // solo la especie cuyo type1/type2 coincide con el tipo seleccionado.
       const dailyLootMult = hasDailyTypeBonus ? 1.2 : 1;
@@ -777,9 +811,8 @@ export const HuntXpOptimizer: React.FC<HuntXpOptimizerProps> = ({
       const BALL_COST_PER_KILL = 90;
       const POTION_UNIT_COST = 75;
       const potionCostPerKill = (potionsPer100Kills / 100) * POTION_UNIT_COST;
-      const supplyPerKill = Math.max(BALL_COST_PER_KILL, potionCostPerKill + BALL_COST_PER_KILL);
+      const supplyPerKill = potionCostPerKill + BALL_COST_PER_KILL;
       const supplyCostPerHour = Math.round(combat.killsPerHourExact * supplyPerKill);
-      const netProfitPerHour = Math.round(grossLootPerHour + captureValuePerHour - supplyCostPerHour);
 
       let safetyGrade: 'safe' | 'moderate' | 'danger' = 'safe';
       let safetyLabel = '100% Seguro (0 Pociones)';
@@ -811,7 +844,7 @@ export const HuntXpOptimizer: React.FC<HuntXpOptimizerProps> = ({
         wildDamagePerHit, totalDamageTakenPerKill,
         potionsPer100Kills, safetyGrade, safetyLabel,
         expectedLootValuePerKill, dropsBreakdown,
-        grossLootPerHour, supplyCostPerHour, netProfitPerHour,
+        grossLootPerHour, supplyCostPerHour,
         hasDailyTypeBonus,
         tmKillsPerHour: Math.round(combat.tmKillsPerHourExact),
         continuousDamagePerHit: combat.continuousDamagePerHit,
@@ -822,7 +855,7 @@ export const HuntXpOptimizer: React.FC<HuntXpOptimizerProps> = ({
   }, [
     attackerPokemon, playerLevel, playerTotalIv, playerQuality,
     clanRank, clanType, hasAoeBonus, hasElementalTm, elementalTmType,
-    isVipBonus, hasDoubleXpEvent, itemPriceMap, dailyTypeBonus, selectedMoveName,
+    xpBonusMultiplier, calibrationSamples, itemPriceMap, dailyTypeBonus, selectedMoveName,
     selectedMoveType, customMovePower, currentMove, attackerStats.pDef
   ]);
 
@@ -902,8 +935,8 @@ export const HuntXpOptimizer: React.FC<HuntXpOptimizerProps> = ({
         comparison = a.wildLevel - b.wildLevel;
       } else if (sortBy === 'potionSafety') {
         comparison = a.potionsPer100Kills - b.potionsPer100Kills;
-      } else if (sortBy === 'netProfit') {
-        // Ordenar por loot real (gross) en lugar del neto
+      } else if (sortBy === 'lootPerHour') {
+        // Loot real esperado de los drops (valor NPC)
         comparison = a.grossLootPerHour - b.grossLootPerHour;
       }
 
@@ -1065,7 +1098,7 @@ export const HuntXpOptimizer: React.FC<HuntXpOptimizerProps> = ({
 
   return (
     <div className="space-y-6">
-      <HuntCalibrationPanel />
+      <HuntCalibrationPanel xpBonusMultiplier={xpBonusMultiplier} />
       {/* Top Section: Attacker Setup & Hero #1 Target */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Attacker (Player) Controls - 7 cols */}
@@ -1876,13 +1909,13 @@ export const HuntXpOptimizer: React.FC<HuntXpOptimizerProps> = ({
                 <th className="p-3 text-right">
                   <button
                     type="button"
-                    onClick={() => handleColumnSort('netProfit')}
+                    onClick={() => handleColumnSort('lootPerHour')}
                     className="inline-flex items-center gap-1 uppercase font-bold hover:text-amber-400 transition-colors ml-auto text-emerald-400"
                     title="Ordenar por Loot real/h (valor esperado de drops al NPC)"
                   >
                     <Coins className="h-3 w-3 text-emerald-400" />
                     <span>Loot real ($/h)</span>
-                    {sortBy === 'netProfit' ? (
+                    {sortBy === 'lootPerHour' ? (
                       sortDirection === 'asc' ? <ArrowUp className="h-3 w-3 text-amber-400" /> : <ArrowDown className="h-3 w-3 text-amber-400" />
                     ) : (
                       <ArrowUpDown className="h-3 w-3 text-slate-600 hover:text-slate-400" />
