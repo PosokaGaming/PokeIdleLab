@@ -446,7 +446,6 @@ export const HuntXpOptimizer: React.FC<HuntXpOptimizerProps> = ({
   const [hasAoeBonus, setHasAoeBonus] = useState<boolean>(false); // Sin TM de área por defecto
   const [hasElementalTm, setHasElementalTm] = useState<boolean>(false);
   const [isVipBonus, setIsVipBonus] = useState<boolean>(false); // VIP desactivado por defecto; el usuario lo activa explícitamente.
-  const [hasDoubleXpEvent, setHasDoubleXpEvent] = useState<boolean>(false); // Evento de doble XP desactivado por defecto.
 
   // Level Restriction Rule: Player level restricts hunts accessible
   const [restrictToPlayerLevel, setRestrictToPlayerLevel] = useState<boolean>(true);
@@ -713,13 +712,10 @@ export const HuntXpOptimizer: React.FC<HuntXpOptimizerProps> = ({
         (targetType1 === selectedDailyType || targetType2 === selectedDailyType);
       const dailyXpMult = hasDailyTypeBonus ? 1.2 : 1;
       const vipXpMult = isVipBonus ? 1.5 : 1;
-      const eventXpMult = hasDoubleXpEvent ? 2 : 1;
-
       // La XP por kill sale exclusivamente de la recompensa base del objetivo.
-      // En Hunt 150 la base es 13.508 XP. VIP y Evento se aplican aquí,
-      // sin calibraciones ni factores correctivos.
+      // Los eventos temporales se aplican manualmente fuera de esta calculadora.
       const baseXp = Math.max(0, Number(target.experience) || 0);
-      const xpPerKillExact = baseXp * vipXpMult * eventXpMult * dailyXpMult;
+      const xpPerKillExact = baseXp * vipXpMult * dailyXpMult;
       const xpPerKill = Math.round(xpPerKillExact);
       const xpPerHourExact =
         combat.killsPerHourExact *
@@ -834,7 +830,7 @@ export const HuntXpOptimizer: React.FC<HuntXpOptimizerProps> = ({
   }, [
     attackerPokemon, playerLevel, playerTotalIv, playerQuality,
     clanRank, clanType, hasAoeBonus, hasElementalTm, elementalTmType,
-    isVipBonus, hasDoubleXpEvent, itemPriceMap, dailyTypeBonus, selectedMoveName,
+    isVipBonus, itemPriceMap, dailyTypeBonus, selectedMoveName,
     selectedMoveType, customMovePower, currentMove, attackerStats.pDef,
     calibrationVersion
   ]);
@@ -1395,18 +1391,6 @@ export const HuntXpOptimizer: React.FC<HuntXpOptimizerProps> = ({
                   VIP — +50% EXP
                 </span>
               </label>
-              <label className="flex-1 flex items-center gap-2 p-2 rounded-lg bg-yellow-500/10 border border-yellow-500/30 cursor-pointer hover:bg-yellow-500/15">
-                <input
-                  type="checkbox"
-                  checked={hasDoubleXpEvent}
-                  onChange={(e) => setHasDoubleXpEvent(e.target.checked)}
-                  className="rounded accent-yellow-500 h-4 w-4"
-                />
-                <span className="text-xs text-yellow-300 font-semibold">
-                  ⚡ Evento XP ×2 — Entrenador + Pokémon
-                </span>
-              </label>
-
               <label className="flex-1 flex items-center gap-2 p-2 rounded-lg bg-amber-500/10 border border-amber-500/30 cursor-pointer hover:bg-amber-500/15">
                 <input
                   type="checkbox"
