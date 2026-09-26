@@ -1,15 +1,17 @@
 // ==UserScript==
 // @name         PokeIdleLab Calculator
 // @namespace    poke-idle-lab
-// @version      1.0.31
+// @version      1.0.32
 // @description  Calculadora de IV para Poke Idle World, integrada con PokeGrid
 // @match        https://poke.idleworld.online/*
+// @updateURL    https://raw.githubusercontent.com/GigaBuda/PokeIdleLab/main/scripts/pokeidlelab-iv.user.js
+// @downloadURL  https://raw.githubusercontent.com/GigaBuda/PokeIdleLab/main/scripts/pokeidlelab-iv.user.js
 // @grant        none
 // @run-at       document-idle
 // ==/UserScript==
 (function(){"use strict";
 const CFG={panelId:"pokeidlelab-iv-panel",storageKey:"pokeidlelab-iv-panel-state",maxIV:32,maxTotal:192,exponents:{hp:.95,atk:.8,def:.8,spa:.8,spd:.8,vel:.95},statLabels:{hp:"HP",atk:"ATK",def:"DEF",spa:"SpA",spd:"SpD",vel:"VEL"},colors:{hp:"#55e6d3",atk:"#ff8c42",def:"#ffd84f",spa:"#5ca9ff",spd:"#55e6d3",vel:"#ff70b8"}};
-let creatures=[],current=null,lastText="",lastPokemonTooltip=null,dragging=false,activeTab="iv",farmVip=true,farmDoubleXp=true;
+let creatures=[],current=null,lastText="",lastPokemonTooltip=null;
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])),norm=s=>String(s||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/shiny/g,"").replace(/[^a-z0-9]+/g," ").trim();
 function num(v){const n=Number(v);return Number.isFinite(n)?n:null}
 function findNumeric(o,keys){if(!o||typeof o!=="object")return null;const wanted=keys.map(x=>String(x).toLowerCase().replace(/[^a-z0-9]/g,""));for(const [key,val] of Object.entries(o)){const nk=String(key).toLowerCase().replace(/[^a-z0-9]/g,"");if(wanted.includes(nk)){const n=num(val);if(n!=null)return n}}return null}
@@ -17,7 +19,7 @@ function base(c,k){const a={hp:["hp","baseHp","baseHP","base_hp","health","hitpo
 async function load(){try{const r=await fetch("/game/creatures.json",{cache:"no-store"});if(r.ok){const d=await r.json();creatures=Array.isArray(d)?d:(Array.isArray(d?.creatures)?d.creatures:Array.isArray(d?.pokemon)?d.pokemon:Array.isArray(d?.data)?d.data:Object.values(d||{}).filter(x=>x&&typeof x==="object"&&x.name))}}catch{}}
 function parse(text,root){const raw=String(text||"");const structured=root?.querySelector?.(".inv-tip-poke,[class*=\"tip-poke\"]");const source=structured?.innerText||structured?.textContent||raw;const levelStructured=source.match(/(?:^|[^A-Za-z])(?:Lv|Lvl|Nv|Level|Nível|Nivel)\.?\s*[:\-]?\s*(\d+)/i);const lines=raw.split(/\n+/).map(x=>x.trim()).filter(Boolean);if(!lines.length)return null;
 if(/\b(?:LOOT|ITEM|RECURSO|POK[EÉ]\s*BALL|POK[EÉ]BALL)\b/i.test(raw)||/(?:\$\s*\d[\d.,]*|\d[\d.,]*\s*dollars?)\b/i.test(raw))return null;
-const lm=raw.match(/(?:Lv\.?|Nivel|Nível)\s*(\d+)/i),qm=raw.match(/(?:×|x)\s*(\d+(?:[.,]\d+)?)/),im=raw.match(/IV\s*(\d+)\s*\/\s*(\d+)/i),pm=raw.match(/(?:Poder|Power)\s*[:\-]?\s*(\d+)/i);
+const lm=raw.match(/(?:Lv\.?|Nivel|Nível)\s*(\d+)/i),qm=raw.match(/(?:^|[^A-Za-z])(?:×|x)\s*(\d+(?:[.,]\d+)?)/),im=raw.match(/IV\s*(\d+)\s*\/\s*(\d+)/i),pm=raw.match(/(?:Poder|Power)\s*[:\-]?\s*(\d+)/i);
 const hasPokemonData=!!(lm||im||pm||/(?:Qualidade|Raridade|HP|Vida|ATK|Ataque|DEF|Defesa|SpA|SpD|VEL|Velocidade)\b/i.test(raw));if(!hasPokemonData)return null;
 const nl=lines.find(x=>!/(?:Lv\.?\s*\d+|IV\s*\d+|Qualidade|Raridade|Poder|Power|×|x\s*\d)/i.test(x))||lines[0];
 const name=nl.replace(/^(?:LOOT|ITEM|POK[EÉ] BALL|POK[EÉ]BALL|RECURSO)\s*/i,"").replace(/\s+(?:LOOT|ITEM|POK[EÉ] BALL|POK[EÉ]BALL|RECURSO)\s*$/i,"").replace(/\s+x\s*\d+\s*$/i,"").replace(/\s+×\s*\d+\s*$/i,"").trim();
@@ -80,8 +82,9 @@ s.textContent=`
 `;
 document.head.appendChild(s);
 const p=document.createElement("div");p.id=CFG.panelId;
-p.innerHTML='<div class="jp-wrap"><div class="pa-topbar"><div class="pa-title"><span class="pa-title-icon">▥</span><span>Pokemon Analyzer</span></div><button class="pa-close" type="button" data-panel-close>×</button></div><div class="pa-tabs"><div class="pa-tab">⚡ Optimizador EXP</div></div><div id="pil-content"></div></div>';
+p.innerHTML='<div class="jp-wrap"><div class="pa-topbar"><div class="pa-title"><span class="pa-title-icon">▥</span><span>Pokemon Analyzer</span></div><button class="pa-close" type="button" data-panel-close>×</button></div><div class="pa-tabs"><div class="pa-tab">📊 Análisis de IV</div></div><div id="pil-content"></div></div>';
 document.body.appendChild(p);
+p.querySelector("[data-panel-close]").addEventListener("click",()=>{p.style.display="none"});
 }
 function moveList(c){
 const src=c?.moves||c?.attacks||c?.skills||c?.learnset||[];
@@ -95,7 +98,6 @@ async function hydratePokemon(p){
 const key=norm(p.name);
 if(speciesCache.has(key)){Object.assign(p,speciesCache.get(key));return p}
 const extra={baseFallback:{},spriteSrc:""};
-try{await loadOfficialDexNumbers();extra.dexNumber=officialDexNumbers.get(key)||""}catch{}
 try{
 const page=await fetch("/pokepedia/pokemon/"+slugifyName(p.name),{cache:"force-cache"});
 if(page.ok){
@@ -114,12 +116,14 @@ for(const item of data.stats||[]){const n=item.stat?.name,v=Number(item.base_sta
 if(!extra.spriteSrc)extra.spriteSrc="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/versions/generation-v/black-white/animated/"+data.id+".gif";
 }
 }catch{}
+// PokeAPI manda en el número de Pokédex; la lista de /pokepedia solo se pide si falló.
+if(!extra.dexNumber){try{await loadOfficialDexNumbers();extra.dexNumber=officialDexNumbers.get(key)||""}catch{}}
 if(!extra.dexNumber&&p.creature?.id)extra.dexNumber=String(p.creature.id).padStart(3,"0");
 if(!extra.spriteSrc&&p.creature?.id)extra.spriteSrc="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/versions/generation-v/black-white/animated/"+p.creature.id+".gif";
 speciesCache.set(key,extra);Object.assign(p,extra);return p
 }
 const TYPE_NAMES={NORMAL:"NORMAL",FIRE:"FUEGO",WATER:"AGUA",ELECTRIC:"ELÉCTRICO",GRASS:"PLANTA",ICE:"HIELO",FIGHTING:"LUCHA",POISON:"VENENO",GROUND:"TIERRA",FLYING:"VOLADOR",PSYCHIC:"PSÍQUICO",BUG:"BICHO",ROCK:"ROCA",GHOST:"FANTASMA",DRAGON:"DRAGÓN",DARK:"SINIESTRO",STEEL:"ACERO",FAIRY:"HADA"};
-function pokemonTypes(c){const out=[];const add=v=>{if(v==null)return;if(Array.isArray(v)){v.forEach(add);return}if(typeof v==="object"){add(v.name??v.type??v.element);return}String(v).split(/[\\/,&|+]+/).map(x=>x.trim()).filter(Boolean).forEach(x=>{const key=x.toUpperCase().normalize("NFD").replace(/[\\u0300-\\u036f]/g,"");const label=TYPE_NAMES[key]||String(x).toUpperCase();if(!out.includes(label))out.push(label)})};[c?.types,c?.type,c?.element,c?.primaryType,c?.secondaryType,c?.type1,c?.type2].forEach(add);return out.slice(0,2)}
+function pokemonTypes(c){const out=[];const add=v=>{if(v==null)return;if(Array.isArray(v)){v.forEach(add);return}if(typeof v==="object"){add(v.name??v.type??v.element);return}String(v).split(/[\/,&|+]+/).map(x=>x.trim()).filter(Boolean).forEach(x=>{const key=x.toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g,"");const label=TYPE_NAMES[key]||String(x).toUpperCase();if(!out.includes(label))out.push(label)})};[c?.types,c?.type,c?.element,c?.primaryType,c?.secondaryType,c?.type1,c?.type2].forEach(add);return out.slice(0,2)}
 function render(p){
 const d=calc(p),el=document.getElementById("pil-content"),box=document.getElementById(CFG.panelId);if(!el||!box)return;
 const c=d.creature||{},types=pokemonTypes(c),type=types.length?types.join(" / "):"—";
@@ -130,23 +134,27 @@ const moves=moveList(c);
 const movesHtml=moves.length?moves.map(m=>`<div class="jp-move">${typeBadge(m.type)}<div><span class="jp-move-name">${esc(m.name)}</span><span class="jp-move-level">${m.level!=null?"Nv "+m.level:""}</span></div><span class="jp-move-power">${m.power??"—"}</span></div>`).join(""):`<div class="jp-move"><span class="jp-move-type">INFO</span><div class="jp-move-name">No se encontraron golpes en creatures.json</div><span></span></div>`;
 const bars=Object.keys(CFG.statLabels).map(k=>`<div class="jp-field" style="grid-template-columns:34px 1fr 43px"><span style="color:var(--c);font-weight:800">${CFG.statLabels[k]}</span><div class="jp-track" style="margin:0"><div class="jp-fill" style="width:${Math.max(0,Math.min(100,d.ivs[k]/32*100))}%"></div></div><span style="text-align:right">${d.ivs[k].toFixed(1)}</span></div>`).join("");
 const sprite=d.spriteSrc||"";
-el.innerHTML=`<div class="jp-head"><div class="jp-visual"><img class="jp-sprite" src="${esc(sprite)}" alt="${esc(d.name)}"></div><div class="jp-info"><div class="jp-title-row"><div class="jp-name">${esc(d.name)}</div><div class="jp-id">#${esc(String(d.dexNumber||c.id||"0").padStart(3,"0"))}</div></div><span class="jp-type">${esc(type)}</span><div class="jp-meta"><div class="jp-meta-box"><span class="jp-label">Nivel</span><span class="jp-value">${d.level}</span></div><div class="jp-meta-box"><span class="jp-label">Calidad</span><span class="jp-value">${d.quality.toFixed(2).replace(".",",")}</span></div><div class="jp-meta-box"><span class="jp-label">IV Total</span><span class="jp-value" style="color:#55e6d3">${d.total}<span class="jp-muted">/192</span></span></div><div class="jp-meta-box"><span class="jp-label">Poder estimado</span><span class="jp-value" style="color:#f1c644">${Math.round(d.power)}</span></div></div></div></div><div class="jp-rating"><div class="jp-gauge" style="--score:${d.pct}"><span>${Math.round(d.pct)}%</span></div><div><div class="jp-rating-title">${rating}</div><div class="jp-rating-sub">Posee atributos equilibrados para uso general.</div></div></div><div class="jp-section">ESTADÍSTICAS / IV <span class="jp-muted">(${d.pct.toFixed(1)}% · <span class="jp-accent">${qualityLabel} ×${d.quality.toFixed(2)}</span>)</span></div><div class="jp-grid">${stats}</div><div class="jp-section">HABILIDADES</div><div class="jp-moves">${movesHtml}</div><div class="jp-footer"><span>Arrastra la esquina inferior derecha para cambiar el tamaño · Poder en el juego: <b>${d.powerGame||Math.round(d.power)}</b></span><span>PokeIdleLab IV Calculator · v1.0.31</span></div>`;
+el.innerHTML=`<div class="jp-head"><div class="jp-visual"><img class="jp-sprite" src="${esc(sprite)}" alt="${esc(d.name)}"></div><div class="jp-info"><div class="jp-title-row"><div class="jp-name">${esc(d.name)}</div><div class="jp-id">#${esc(String(d.dexNumber||c.id||"0").padStart(3,"0"))}</div></div><span class="jp-type">${esc(type)}</span><div class="jp-meta"><div class="jp-meta-box"><span class="jp-label">Nivel</span><span class="jp-value">${d.level}</span></div><div class="jp-meta-box"><span class="jp-label">Calidad</span><span class="jp-value">${d.quality.toFixed(2).replace(".",",")}</span></div><div class="jp-meta-box"><span class="jp-label">IV Total</span><span class="jp-value" style="color:#55e6d3">${d.total}<span class="jp-muted">/192</span></span></div><div class="jp-meta-box"><span class="jp-label">Poder estimado</span><span class="jp-value" style="color:#f1c644">${Math.round(d.power)}</span></div></div></div></div><div class="jp-rating"><div class="jp-gauge" style="--score:${d.pct}"><span>${Math.round(d.pct)}%</span></div><div><div class="jp-rating-title">${rating}</div><div class="jp-rating-sub">Posee atributos equilibrados para uso general.</div></div></div><div class="jp-section">ESTADÍSTICAS / IV <span class="jp-muted">(${d.pct.toFixed(1)}% · <span class="jp-accent">${qualityLabel} ×${d.quality.toFixed(2)}</span>)</span></div><div class="jp-grid">${stats}</div><div class="jp-section">HABILIDADES</div><div class="jp-moves">${movesHtml}</div><div class="jp-footer"><span>Arrastra la esquina inferior derecha para cambiar el tamaño · Poder en el juego: <b>${d.powerGame||Math.round(d.power)}</b></span><span>PokeIdleLab IV Calculator · v1.0.32</span></div>`;
 el.querySelectorAll("[data-stat]").forEach(i=>i.addEventListener("input",()=>{if(current){current.actuals[i.dataset.stat]=Number(i.value)||0;render(current)}}));
-box.querySelector("[data-panel-close]")?.addEventListener("click",()=>{box.style.display="none"});
-el.querySelector("[data-copy]")?.addEventListener("click",async()=>{const t=d.name+" · Nv "+d.level+" · IV "+d.total+"/192 · Calidad "+d.quality.toFixed(2)+" · Poder "+Math.round(d.power);try{await navigator.clipboard?.writeText(t)}catch{}});
 box.style.display="block";box.scrollTop=0;box.querySelector(".jp-wrap")?.scrollTo(0,0);
 const saved=localStorage.getItem(CFG.storageKey);if(saved){try{const z=JSON.parse(saved);if(z.w&&z.h){box.style.width=Math.max(560,Math.min(innerWidth-12,z.w))+"px";box.style.height=Math.max(520,Math.min(innerHeight-12,z.h))+"px"}if(Number.isFinite(z.x)&&Number.isFinite(z.y)){box.style.transform="none";box.style.left=Math.max(0,Math.min(innerWidth-box.offsetWidth,z.x))+"px";box.style.top=Math.max(0,Math.min(innerHeight-box.offsetHeight,z.y))+"px"}}catch{}}
 if(!box.dataset.resizeBound){box.dataset.resizeBound="1";new ResizeObserver(()=>{clearTimeout(box._resizeTimer);box._resizeTimer=setTimeout(()=>{const z=JSON.parse(localStorage.getItem(CFG.storageKey)||"{}");localStorage.setItem(CFG.storageKey,JSON.stringify({w:box.offsetWidth,h:box.offsetHeight,x:z.x,y:z.y}))},120)}).observe(box)}if(!box.dataset.dragBound){box.dataset.dragBound="1";const bar=box.querySelector(".pa-topbar");let drag=null;bar?.addEventListener("mousedown",e=>{if(e.button!==0||e.target.closest("button"))return;const r=box.getBoundingClientRect();drag={dx:e.clientX-r.left,dy:e.clientY-r.top};box.style.transform="none";box.style.left=r.left+"px";box.style.top=r.top+"px";e.preventDefault()});document.addEventListener("mousemove",e=>{if(!drag)return;const x=Math.max(0,Math.min(innerWidth-box.offsetWidth,e.clientX-drag.dx));const y=Math.max(0,Math.min(innerHeight-box.offsetHeight,e.clientY-drag.dy));box.style.left=x+"px";box.style.top=y+"px"});document.addEventListener("mouseup",()=>{if(!drag)return;drag=null;const z=JSON.parse(localStorage.getItem(CFG.storageKey)||"{}");localStorage.setItem(CFG.storageKey,JSON.stringify({w:box.offsetWidth,h:box.offsetHeight,x:parseFloat(box.style.left),y:parseFloat(box.style.top)}))})}
 }
 function scan(){const tips=[...document.querySelectorAll(".inv-tip")].filter(t=>{const s=getComputedStyle(t),r=t.getBoundingClientRect();return s.display!=="none"&&s.visibility!=="hidden"&&+s.opacity>0&&r.width>0&&r.height>0});const tip=tips.find(t=>{const tx=t.innerText||"";return !/\b(?:LOOT|ITEM|RECURSO|POK[EÉ]\s*BALL|POK[EÉ]BALL)\b/i.test(tx)&&!/(?:\$\s*\d[\d.,]*|\d[\d.,]*\s*dollars?)\b/i.test(tx)})||tips[0];if(!tip){return}const text=tip.innerText||"";if(/\b(?:LOOT|ITEM|RECURSO|POK[EÉ]\s*BALL|POK[EÉ]BALL)\b/i.test(text)||/(?:\$\s*\d[\d.,]*|\d[\d.,]*\s*dollars?)\b/i.test(text)){document.getElementById(CFG.panelId)?.style.setProperty("display","none");lastPokemonTooltip=null;lastText="";current=null;return}const p=parse(text,tip);if(!p){document.getElementById(CFG.panelId)?.style.setProperty("display","none");lastPokemonTooltip=null;lastText="";current=null;return}p.spriteSrc=findSpriteSrc(tip)||"";if(tip!==lastPokemonTooltip||text!==lastText){lastPokemonTooltip=tip;lastText=text;current=p;render(p);hydratePokemon(p).then(()=>{if(current===p){p.spriteSrc=p.spriteSrc||findSpriteSrc(tip);render(p)}})}}
-new MutationObserver(scan).observe(document.body,{childList:true,subtree:true,characterData:true,attributes:true});document.addEventListener("mouseover",e=>{if(e.target.closest?.(".inv-tip"))setTimeout(scan,0)},true);setInterval(scan,250);panel();load();
+// Como mucho un escaneo por frame, e ignorando los cambios del propio panel:
+// el juego toca el DOM sin parar y cada escaneo llama a getComputedStyle.
+const inPanel=n=>{const e=n?.nodeType===1?n:n?.parentElement;return !!e?.closest?.("#"+CFG.panelId)};
+function throttled(fn){let queued=false;return()=>{if(queued)return;queued=true;requestAnimationFrame(()=>{queued=false;fn()})}}
+const queueScan=throttled(scan);
+new MutationObserver(ms=>{if(ms.some(m=>!inPanel(m.target)))queueScan()}).observe(document.body,{childList:true,subtree:true,characterData:true,attributes:true});document.addEventListener("mouseover",e=>{if(e.target.closest?.(".inv-tip"))queueScan()},true);setInterval(scan,250);panel();load();
 const POKEIDLELAB_UI_SCALE={small:.9,medium:1,large:1.1};let pokeidlelabUiMode=null,pokeidlelabUiScale=1;
-function pokeidlelabUiModeOf(v){const s=String(v||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/\s+/g," ").trim();if(/^(pequeno|pequena|small|sm|s)$/.test(s))return"small";if(/^(medio|media|medium|md|m|normal|default)$/.test(s))return"medium";if(/^(grande|large|lg|l)$/.test(s))return"large";return null}
+function pokeidlelabUiModeOf(v){const s=String(v||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/\s+/g," ").trim();if(/^(pequeno|pequena|small)$/.test(s))return"small";if(/^(medio|media|medium)$/.test(s))return"medium";if(/^(grande|large)$/.test(s))return"large";return null}
 function pokeidlelabUiApply(mode){const box=document.getElementById(CFG.panelId),scale=POKEIDLELAB_UI_SCALE[mode];if(!box||!scale||mode===pokeidlelabUiMode)return;const r=box.getBoundingClientRect(),factor=scale/pokeidlelabUiScale,maxW=Math.max(560,innerWidth-12),maxH=Math.max(520,innerHeight-12);box.style.width=Math.round(Math.max(560,Math.min(maxW,r.width*factor)))+"px";box.style.height=Math.round(Math.max(520,Math.min(maxH,r.height*factor)))+"px";pokeidlelabUiMode=mode;pokeidlelabUiScale=scale}
 function pokeidlelabUiSelectedMode(){for(const sel of document.querySelectorAll("select")){const m=pokeidlelabUiModeOf(sel.value);if(m)return m}for(const el of document.querySelectorAll("button,[role=button],[role=tab],label")){const m=pokeidlelabUiModeOf((el.textContent||"").replace(/\s+/g," "));if(!m)continue;const c=String(el.className||"");if(el.getAttribute("aria-pressed")==="true"||el.getAttribute("aria-selected")==="true"||/\b(active|selected|current|checked|seleccionad[oa])\b/i.test(c))return m}return null}
 function pokeidlelabUiScan(){const m=pokeidlelabUiSelectedMode();if(m)pokeidlelabUiApply(m)}
 document.addEventListener("click",e=>{const el=e.target?.closest?.("button,[role=button],[role=tab],label,option"),m=pokeidlelabUiModeOf(el?.textContent);if(m){pokeidlelabUiApply(m);setTimeout(pokeidlelabUiScan,80);setTimeout(pokeidlelabUiScan,300)}},true);
 document.addEventListener("change",e=>{const el=e.target,m=pokeidlelabUiModeOf(el?.value)||pokeidlelabUiModeOf(el?.selectedOptions?.[0]?.textContent);if(m){pokeidlelabUiApply(m);setTimeout(pokeidlelabUiScan,80)}},true);
-new MutationObserver(pokeidlelabUiScan).observe(document.documentElement,{subtree:true,attributes:true,attributeFilter:["class","aria-pressed","aria-selected","value"]});setInterval(pokeidlelabUiScan,700);setTimeout(pokeidlelabUiScan,500);setTimeout(pokeidlelabUiScan,1500);
+const queueUiScan=throttled(pokeidlelabUiScan);
+new MutationObserver(ms=>{if(ms.some(m=>!inPanel(m.target)))queueUiScan()}).observe(document.documentElement,{subtree:true,attributes:true,attributeFilter:["class","aria-pressed","aria-selected","value"]});setInterval(pokeidlelabUiScan,700);setTimeout(pokeidlelabUiScan,500);setTimeout(pokeidlelabUiScan,1500);
 window.addEventListener("resize",()=>{const box=document.getElementById(CFG.panelId);if(!box)return;const maxW=Math.max(560,innerWidth-12),maxH=Math.max(520,innerHeight-12);if(box.offsetWidth>maxW)box.style.width=maxW+"px";if(box.offsetHeight>maxH)box.style.height=maxH+"px"});
 })();

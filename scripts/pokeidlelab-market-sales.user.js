@@ -1,9 +1,11 @@
 // ==UserScript==
 // @name         PokeIdleLab Global Market Sales
 // @namespace    poke-idle-lab
-// @version      1.0.0
+// @version      1.0.1
 // @description  Muestra un aviso cuando una venta del Global Market se completa.
 // @match        https://poke.idleworld.online/*
+// @updateURL    https://raw.githubusercontent.com/GigaBuda/PokeIdleLab/main/scripts/pokeidlelab-market-sales.user.js
+// @downloadURL  https://raw.githubusercontent.com/GigaBuda/PokeIdleLab/main/scripts/pokeidlelab-market-sales.user.js
 // @grant        none
 // @run-at       document-idle
 // ==/UserScript==
@@ -90,7 +92,7 @@
 
   function showToast(message) {
     const now = Date.now();
-    const signature = String(message || "").replace(/\\s+/g, " ").trim().slice(0, 300);
+    const signature = String(message || "").replace(/\s+/g, " ").trim().slice(0, 300);
 
     if (!signature || signature === lastSignature && now - lastAt < CFG.cooldown) return;
     lastSignature = signature;
@@ -120,40 +122,55 @@
     }, CFG.duration);
   }
 
+  // El texto de un contenedor muy grande (la app entera) siempre incluye el
+  // menú "Global Market"; solo cuentan paneles de tamaño razonable.
+  const MAX_CONTEXT_TEXT = 3000;
+
   function isMarketContext(node) {
     const text = String(node?.textContent || "");
-    if (/global\\s+market/i.test(text)) return true;
+    if (/global\s+market/i.test(text)) return true;
 
     let el = node instanceof Element ? node : node?.parentElement;
     for (let i = 0; el && i < 6; i++, el = el.parentElement) {
+      if (/market|listing/i.test(String(el.className || "") + " " + String(el.id || ""))) return true;
       const t = String(el.textContent || "");
-      if (/global\\s+market/i.test(t)) return true;
-      if (/market|listing|listing details|my listings|history|requests/i.test(
-        String(el.className || "") + " " + String(el.id || "")
-      )) return true;
+      if (t.length <= MAX_CONTEXT_TEXT && /global\s+market/i.test(t)) return true;
     }
 
     return false;
   }
 
+  function isNotification(node) {
+    let el = node instanceof Element ? node : node?.parentElement;
+    for (let i = 0; el && i < 4; i++, el = el.parentElement) {
+      const role = el.getAttribute?.("role") || "";
+      if (role === "alert" || role === "status") return true;
+      if (/toast|notification|snackbar|alert/i.test(String(el.className || "") + " " + String(el.id || ""))) return true;
+    }
+    return false;
+  }
+
   function looksLikeSale(text) {
-    const t = String(text || "").replace(/\\s+/g, " ").trim();
+    const t = String(text || "").replace(/\s+/g, " ").trim();
     if (!t || t.length > 500) return false;
 
     const sale = /(?:sold|sale completed|successfully sold|item sold|listing sold|vendido|venta completada|venta realizada|vendido correctamente)/i.test(t);
     if (!sale) return false;
 
-    return /(?:global\\s+market|market|listing|item|pokemon|pokémon|dollars|coins|dinero|precio|price)/i.test(t) || sale;
+    return /(?:global\s+market|market|listing|item|pokemon|pokémon|dollars|coins|dinero|precio|price)/i.test(t);
   }
 
   function cleanMessage(text) {
-    const t = String(text || "").replace(/\\s+/g, " ").trim();
+    const t = String(text || "").replace(/\s+/g, " ").trim();
     const match = t.match(/(?:sold|sale completed|successfully sold|item sold|listing sold|vendido|venta completada|venta realizada|vendido correctamente).{0,220}/i);
     return match ? match[0].trim() : t.slice(0, 220);
   }
 
   function scan(root) {
     const candidates = [];
+
+    // Nuestro propio aviso también dice "venta completada": no reaccionar a él.
+    if (root?.closest?.("#" + CFG.id)) return;
 
     if (root instanceof Element) {
       candidates.push(root);
@@ -173,6 +190,9 @@
       // Evita disparar por todo el panel del market: solo avisamos por
       // nodos pequeños que parezcan una notificación/resultado reciente.
       if (text.length > 500) continue;
+
+      // Un "sold" en el chat o en un "Sold out" no es una venta nuestra.
+      if (!isMarketContext(el) && !isNotification(el)) continue;
       showToast(cleanMessage(text));
       break;
     }
@@ -195,7 +215,7 @@
       characterData: true
     });
 
-    console.log("[PokeIdleLab Market Sales] addon cargado v1.0.0");
+    console.log("[PokeIdleLab Market Sales] addon cargado v1.0.1");
   }
 
   init();
