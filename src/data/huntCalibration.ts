@@ -50,9 +50,6 @@ const MIN_SESSION_KILLS = 10;
 const MAX_SAMPLES_PER_TARGET = 30;
 export const CALIBRATION_UPDATED_EVENT = 'pokeidlelab:calibration-updated';
 
-/** Además de la propia web, solo el juego puede mandar sesiones por postMessage. */
-const BRIDGE_ALLOWED_ORIGINS = ['https://poke.idleworld.online'];
-
 const HUNT_LEVEL_BY_ID = new Map(POKEMON_TIER_DATA.map((p) => [p.id, p.huntLevel]));
 
 /**
@@ -273,10 +270,11 @@ export function installHuntCalibrationBridge(): () => void {
   if (typeof window === 'undefined') return () => undefined;
 
   const handler = (event: MessageEvent<PokeGridCalibrationMessage>) => {
-    // Sin esto, cualquier página que abra o enmarque la web podría inyectar sesiones.
-    if (event.origin !== window.location.origin && !BRIDGE_ALLOWED_ORIGINS.includes(event.origin)) return;
     const data = event.data;
     if (!data || data.type !== 'POKEGRID_HUNT_CALIBRATION') return;
+    // Solo mensajes de la propia ventana: la extensión corre dentro del juego, así
+    // que el bridge vive en la misma página. Otra ventana o marco no puede inyectar.
+    if (event.source !== window || event.origin !== window.location.origin) return;
     recordHuntCalibration({
       targetId: Number(data.targetId),
       huntLevel: Number(data.huntLevel) || 0,
