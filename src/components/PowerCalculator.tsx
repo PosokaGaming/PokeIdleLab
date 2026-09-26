@@ -1,7 +1,8 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Gauge, Scale, Info, TrendingUp, Search } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { Gauge, Scale, Info, TrendingUp } from 'lucide-react';
 import { POKEMON_TIER_DATA as ALL_POKEMON, OfficialPokemon } from '../data/pokemonTierData';
 import { QUALITY_BANDS, QUALITY_EXP, getQualityBand, getPokemonGeneration } from '../data/calculatorHelpers';
+import { SpeciesSelect } from './shared/SpeciesSelect';
 
 // De momento el servidor solo tiene la 1ª y 2ª generación
 const POKEMON_TIER_DATA = ALL_POKEMON.filter((p) => getPokemonGeneration(p.id) <= 2);
@@ -45,111 +46,6 @@ function compute(p: OfficialPokemon, c: Config, exp: number) {
 
 const fmt = (n: number) => n.toLocaleString('es-ES');
 
-const normalize = (t: string) => t.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-
-/** Selector de Pokémon con búsqueda: al escribir las primeras letras (o el número) filtra la lista. */
-const SpeciesSelect: React.FC<{ value: number; onChange: (id: number) => void }> = ({ value, onChange }) => {
-  const list = useMemo(() => [...POKEMON_TIER_DATA].sort((a, b) => a.id - b.id), []);
-  const selected = list.find((p) => p.id === value) || list[0];
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState('');
-  const [active, setActive] = useState(0);
-  const wrapRef = useRef<HTMLDivElement>(null);
-  const activeRef = useRef<HTMLButtonElement>(null);
-
-  const results = useMemo(() => {
-    const q = normalize(query.trim().replace(/^#/, ''));
-    if (!q) return list;
-    const starts: OfficialPokemon[] = [];
-    const contains: OfficialPokemon[] = [];
-    list.forEach((p) => {
-      const n = normalize(p.name);
-      if (n.startsWith(q) || String(p.id).startsWith(q)) starts.push(p);
-      else if (n.includes(q)) contains.push(p);
-    });
-    return [...starts, ...contains];
-  }, [query, list]);
-
-  useEffect(() => {
-    const close = (e: MouseEvent) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener('mousedown', close);
-    return () => document.removeEventListener('mousedown', close);
-  }, []);
-
-  useEffect(() => {
-    if (open && activeRef.current) activeRef.current.scrollIntoView({ block: 'nearest' });
-  }, [active, open]);
-
-  const choose = (p: OfficialPokemon) => {
-    onChange(p.id);
-    setOpen(false);
-    setQuery('');
-  };
-
-  const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      setOpen(true);
-      setActive((a) => Math.min(results.length - 1, a + 1));
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      setActive((a) => Math.max(0, a - 1));
-    } else if (e.key === 'Enter') {
-      e.preventDefault();
-      if (open && results[active]) choose(results[active]);
-    } else if (e.key === 'Escape') {
-      setOpen(false);
-      setQuery('');
-    }
-  };
-
-  return (
-    <div ref={wrapRef} className="relative">
-      <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-slate-500 pointer-events-none" />
-      <input
-        type="text"
-        value={open ? query : `#${selected.id} ${selected.name}`}
-        placeholder="Escribe el nombre del Pokémon..."
-        onFocus={(e) => {
-          setOpen(true);
-          setQuery('');
-          setActive(0);
-          e.currentTarget.select();
-        }}
-        onChange={(e) => {
-          setQuery(e.target.value);
-          setOpen(true);
-          setActive(0);
-        }}
-        onKeyDown={onKeyDown}
-        className="w-full rounded-lg bg-slate-900 border border-slate-800 pl-8 pr-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-amber-500"
-      />
-      {open && (
-        <div className="absolute z-30 mt-1 w-full max-h-60 overflow-y-auto rounded-lg border border-slate-700 bg-slate-950 shadow-xl">
-          {results.length === 0 && <div className="px-3 py-2 text-xs text-slate-500">Sin resultados</div>}
-          {results.map((p, i) => (
-            <button
-              key={p.id}
-              type="button"
-              ref={i === active ? activeRef : undefined}
-              onMouseEnter={() => setActive(i)}
-              onClick={() => choose(p)}
-              className={`w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 ${
-                i === active ? 'bg-amber-500/15 text-amber-200' : 'text-slate-300'
-              } ${p.id === selected.id ? 'font-bold' : ''}`}
-            >
-              <span className="font-mono text-slate-500 w-9">#{p.id}</span>
-              <span>{p.name}</span>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-};
-
 const ConfigPanel: React.FC<{
   title: string;
   accent: string;
@@ -162,7 +58,6 @@ const ConfigPanel: React.FC<{
   const band = getQualityBand(config.quality);
   const set = (patch: Partial<Config>) => onChange({ ...config, ...patch });
 
-  // Sensibilidad: cuánto Power aporta un empujón pequeño de IV o de Calidad
   const plusIv = compute(pokemon, { ...config, totalIv: Math.min(192, config.totalIv + 12) }, exp).power - result.power;
   const plusQ = compute(pokemon, { ...config, quality: config.quality + 0.1 }, exp).power - result.power;
 
@@ -173,7 +68,7 @@ const ConfigPanel: React.FC<{
         <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${band.badgeColor}`}>{band.name}</span>
       </div>
 
-      <SpeciesSelect value={pokemon.id} onChange={(id) => set({ speciesId: id })} />
+      <SpeciesSelect value={pokemon.id} onChange={(id) => set({ speciesId: id })} pokemonList={POKEMON_TIER_DATA} />
 
       <div className="grid grid-cols-1 gap-3 text-xs text-slate-300">
         <div className="block">
@@ -272,7 +167,6 @@ export const PowerCalculator: React.FC = () => {
   const winner = ra.power === rb.power ? null : ra.power > rb.power ? 'A' : 'B';
   const diffPct = ra.power === rb.power ? 0 : (Math.abs(ra.power - rb.power) / Math.min(ra.power, rb.power)) * 100;
   const sameSpecies = pa.id === pb.id;
-  // La cuenta "tier × IV" que el juego desmiente: si elige a otro ganador, se avisa
   const naive = a.quality * a.totalIv === b.quality * b.totalIv ? null : a.quality * a.totalIv > b.quality * b.totalIv ? 'A' : 'B';
   const naiveLies = sameSpecies && winner && naive && naive !== winner;
 
