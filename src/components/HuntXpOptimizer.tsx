@@ -76,9 +76,16 @@ const normalize = (t: string) => t.toLowerCase().normalize('NFD').replace(/[\u03
  * Las sesiones reales aportan segundos por derrota; las muestras conocidas
  * se conservan como referencias y el resto usa un modelo continuo calibrado.
  */
-const REAL_HUNT_REFERENCE_CYCLE_SECONDS = 8.70;
-const REAL_HUNT_REFERENCE_WALK_SECONDS = 7.00;
-const REAL_HUNT_REFERENCE_COMBAT_SECONDS = 0.60;
+// Hunt 150: referencia global observada (~295 kills/h) usada solo para
+// convertir el Bulk dinámico en tiempo de combate cuando no hay una muestra
+// real específica de esa presa.
+const HUNT_REFERENCE_CYCLE_SECONDS = 3600 / 295;
+const HUNT_REFERENCE_WALK_SECONDS = 7.00;
+const HUNT_REFERENCE_COMBAT_SECONDS =
+  HUNT_REFERENCE_CYCLE_SECONDS - HUNT_REFERENCE_WALK_SECONDS;
+// Bulk de normalización: Pokémon neutro 80 HP / 80 Def a Hunt 150,
+// IV salvaje 96 y Quality 1.00 -> HP 840, Def 168 -> 2822.4.
+const HUNT_REFERENCE_BULK = 2822.4;
 const POKEGRID_TM_POWER = 300;
 const POKEGRID_TM_COOLDOWN_SECONDS = 10;
 const POKEGRID_TM_TARGETS = 2;
@@ -227,32 +234,34 @@ function projectHuntCombat(
   };
 
   const finalDamagePerHit = Math.max(1, Math.round(selected.continuousDamagePerHit));
+  // Bulk efectivo = HP × Defensa relevante. La defensa relevante es la que
+  // realmente recibe el ataque elegido (Def para físico / Def.Es para especial).
+  // Este valor es el que gobierna la cadencia: menos Bulk => menos tiempo por
+  // combate => más kills/h; más Bulk => más tiempo => menos kills/h.
   const effectiveBulk = Math.round(wildMaxHp * (selected.targetDefense / 50));
-  const hitsToKill = Math.max(1, Math.ceil(wildMaxHp / finalDamagePerHit));
-  // En Hunt los ataques ocurren de uno en uno: no podemos convertir
-  // 2.2 golpes en 2.2 impactos reales. El tiempo de combate depende de los
-  // golpes enteros necesarios y de la cadencia del atacante.
   const continuousHitsToKill = Math.max(
     1,
     wildMaxHp / selected.continuousDamagePerHit
   );
   const combatHitsToKill = Math.max(1, Math.ceil(continuousHitsToKill));
-  const combatTimeSeconds = combatHitsToKill * attackIntervalSeconds;
+  const hitsToKill = combatHitsToKill;
 
   const calibration = getHuntCalibration(target.id, wildLevel);
-  // Las semillas históricas (incluida la referencia global de Hunt 150) no
-  // deben sustituir el combate específico de cada presa. Solo una muestra real
-  // del propio objetivo puede aportar una cadencia observada.
   const realCalibratedCycleSeconds =
     calibration?.source === 'real'
       ? calibration.cycleSeconds
       : undefined;
 
-  // La referencia de 8.70 s es solo una muestra histórica, no un mínimo
-  // global. Si se usa como suelo, todos los objetivos con combate < 1.70 s
-  // quedan artificialmente clavados en 413.79 kills/h.
+  // Sin una muestra real de esta presa, el tiempo de combate se escala
+  // directamente con su Bulk. La referencia de 295 kills/h fija la escala,
+  // no actúa como mínimo ni hace que todos los Hunt 150 duren lo mismo.
+  const bulkRatio = Math.max(0.05, effectiveBulk / HUNT_REFERENCE_BULK);
+  const bulkCombatTimeSeconds = Math.max(
+    attackIntervalSeconds,
+    HUNT_REFERENCE_COMBAT_SECONDS * bulkRatio
+  );
   const fallbackCycleSeconds =
-    REAL_HUNT_REFERENCE_WALK_SECONDS + combatTimeSeconds;
+    HUNT_REFERENCE_WALK_SECONDS + bulkCombatTimeSeconds;
   const normalCycleSeconds = Math.max(
     0.6,
     realCalibratedCycleSeconds !== undefined
