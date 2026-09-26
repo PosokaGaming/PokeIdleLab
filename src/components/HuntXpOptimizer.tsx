@@ -260,8 +260,9 @@ function projectHuntCombat(
     attackIntervalSeconds,
     HUNT_REFERENCE_COMBAT_SECONDS * bulkRatio
   );
+  const combatTimeSeconds = bulkCombatTimeSeconds;
   const fallbackCycleSeconds =
-    HUNT_REFERENCE_WALK_SECONDS + bulkCombatTimeSeconds;
+    HUNT_REFERENCE_WALK_SECONDS + combatTimeSeconds;
   const normalCycleSeconds = Math.max(
     0.6,
     realCalibratedCycleSeconds !== undefined
