@@ -33,7 +33,9 @@ export interface HuntCalibration {
   lastUpdated: number;
 }
 
-const STORAGE_KEY = 'pokeIdleLab.huntCalibration.v1';
+// v2: invalida las muestras antiguas tomadas con el modelo de cadencia anterior.
+// Las muestras viejas podían fijar Hunt 150 en ~413.79 kills/h (8.70 s/ciclo).
+const STORAGE_KEY = 'pokeIdleLab.huntCalibration.v2';
 const MIN_SESSION_SECONDS = 5 * 60;
 const MIN_SESSION_KILLS = 10;
 const MAX_SAMPLES_PER_TARGET = 30;
