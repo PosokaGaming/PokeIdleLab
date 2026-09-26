@@ -229,16 +229,15 @@ function projectHuntCombat(
   const finalDamagePerHit = Math.max(1, Math.round(selected.continuousDamagePerHit));
   const effectiveBulk = Math.round(wildMaxHp * (selected.targetDefense / 50));
   const hitsToKill = Math.max(1, Math.ceil(wildMaxHp / finalDamagePerHit));
+  // En Hunt los ataques ocurren de uno en uno: no podemos convertir
+  // 2.2 golpes en 2.2 impactos reales. El tiempo de combate depende de los
+  // golpes enteros necesarios y de la cadencia del atacante.
   const continuousHitsToKill = Math.max(
-    0.1,
+    1,
     wildMaxHp / selected.continuousDamagePerHit
   );
-  // El ranking usa el tiempo continuo de combate para que pequeñas diferencias
-  // de HP/Defensa no queden ocultas por el redondeo a un número entero de golpes.
-  const combatTimeSeconds = Math.max(
-    attackIntervalSeconds,
-    continuousHitsToKill * attackIntervalSeconds
-  );
+  const combatHitsToKill = Math.max(1, Math.ceil(continuousHitsToKill));
+  const combatTimeSeconds = combatHitsToKill * attackIntervalSeconds;
 
   const calibration = getHuntCalibration(target.id, wildLevel);
   // Las semillas históricas (incluida la referencia global de Hunt 150) no
