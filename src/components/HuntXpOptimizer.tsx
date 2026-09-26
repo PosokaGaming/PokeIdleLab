@@ -86,9 +86,6 @@ const HUNT_REFERENCE_COMBAT_SECONDS =
 // Bulk de normalización: Pokémon neutro 80 HP / 80 Def a Hunt 150,
 // IV salvaje 96 y Quality 1.00 -> HP 840, Def 168 -> 2822.4.
 const HUNT_REFERENCE_BULK = 2822.4;
-const POKEGRID_TM_POWER = 300;
-const POKEGRID_TM_COOLDOWN_SECONDS = 10;
-const POKEGRID_TM_TARGETS = 2;
 const REAL_HUNT_AOE_TARGET_MULTIPLIER = 16.5 / 14;
 
 type HuntMove = OfficialPokemon['attacks'][number] & { isCustom?: boolean };
@@ -113,7 +110,6 @@ interface HuntCombatProjection {
   combatTimeSeconds: number;
   totalCycleSeconds: number;
   killsPerHourExact: number;
-  tmKillsPerHourExact: number;
   elementalMultiplier: number;
 }
 
@@ -138,8 +134,6 @@ function projectHuntCombat(
   clanRank: number,
   clanType: string,
   hasAoeBonus: boolean,
-  hasElementalTm: boolean,
-  elementalTmType: string,
   forcedMove?: HuntMove
 ): HuntCombatProjection {
   const statGrowth = ivTotal / 6;
@@ -275,31 +269,6 @@ function projectHuntCombat(
   const normalKillsPerHourExact =
     (3600 / normalCycleSeconds) * aoeTargetMultiplier;
 
-  let tmKillsPerHourExact = 0;
-  if (hasElementalTm) {
-    const tmType = elementalTmType.toUpperCase();
-    const tmIsSpecial = getMoveIsSpecial(tmType);
-    const tmOffense = tmIsSpecial ? pSpAtk : pAtk;
-    const tmEffectiveness = getAmplifiedMultiplier(
-      tmType,
-      target.type1,
-      target.type2
-    );
-    const tmStab = getMoveStab(attacker, tmType);
-    const tmDefense = tmIsSpecial ? wildSpDef : wildDef;
-    const tmRawDamage =
-      ((2 * level / 5 + 2) * POKEGRID_TM_POWER *
-        (tmOffense / Math.max(1, tmDefense))) / 50 + 2;
-    const tmDamageRatio = Math.min(
-      1,
-      Math.max(0, (tmRawDamage * tmEffectiveness * tmStab) / wildMaxHp)
-    );
-    tmKillsPerHourExact =
-      (3600 / POKEGRID_TM_COOLDOWN_SECONDS) *
-      POKEGRID_TM_TARGETS *
-      tmDamageRatio;
-  }
-
   return {
     wildMaxHp,
     wildDef,
@@ -319,8 +288,7 @@ function projectHuntCombat(
     continuousHitsToKill,
     combatTimeSeconds,
     totalCycleSeconds: normalCycleSeconds,
-    killsPerHourExact: normalKillsPerHourExact + tmKillsPerHourExact,
-    tmKillsPerHourExact,
+    killsPerHourExact: normalKillsPerHourExact,
     elementalMultiplier: selected.elementalMultiplier
   };
 }
@@ -453,7 +421,6 @@ export const HuntXpOptimizer: React.FC<HuntXpOptimizerProps> = ({
   const [clanRank, setClanRank] = useState<number>(0); // Rank 0
   const [clanType, setClanType] = useState<string>('NONE');
   const [hasAoeBonus, setHasAoeBonus] = useState<boolean>(false); // Sin TM de área por defecto
-  const [hasElementalTm, setHasElementalTm] = useState<boolean>(false);
   const [isVipBonus, setIsVipBonus] = useState<boolean>(false); // VIP desactivado por defecto; el usuario lo activa explícitamente.
 
   // Level Restriction Rule: Player level restricts hunts accessible
@@ -488,9 +455,6 @@ export const HuntXpOptimizer: React.FC<HuntXpOptimizerProps> = ({
   const [selectedMoveName, setSelectedMoveName] = useState<string>('');
   const [customMovePower, setCustomMovePower] = useState<number>(50);
   const [selectedMoveType, setSelectedMoveType] = useState<string>(attackerPokemon.type1);
-  const [elementalTmType, setElementalTmType] = useState<string>(
-    initialPokemon?.type1 || attackerPokemon.type1
-  );
 
   // Available attacks learned by attacker
   const availableAttacks = useMemo(() => {
@@ -696,8 +660,6 @@ export const HuntXpOptimizer: React.FC<HuntXpOptimizerProps> = ({
         clanRank,
         clanType,
         hasAoeBonus,
-        hasElementalTm,
-        elementalTmType,
         forcedMove
       );
 
@@ -830,7 +792,6 @@ export const HuntXpOptimizer: React.FC<HuntXpOptimizerProps> = ({
         expectedLootValuePerKill, dropsBreakdown,
         grossLootPerHour, supplyCostPerHour, netProfitPerHour,
         hasDailyTypeBonus,
-        tmKillsPerHour: Math.round(combat.tmKillsPerHourExact),
         continuousDamagePerHit: combat.continuousDamagePerHit,
         aoeTargetMultiplier: hasAoeBonus ? REAL_HUNT_AOE_TARGET_MULTIPLIER : 1,
         usedAutoMove: !forcedMove
@@ -838,7 +799,7 @@ export const HuntXpOptimizer: React.FC<HuntXpOptimizerProps> = ({
     });
   }, [
     attackerPokemon, playerLevel, playerTotalIv, playerQuality,
-    clanRank, clanType, hasAoeBonus, hasElementalTm, elementalTmType,
+    clanRank, clanType, hasAoeBonus,
     isVipBonus, itemPriceMap, dailyTypeBonus, selectedMoveName,
     selectedMoveType, customMovePower, currentMove, attackerStats.pDef,
     calibrationVersion
@@ -1368,26 +1329,6 @@ export const HuntXpOptimizer: React.FC<HuntXpOptimizerProps> = ({
                   Disco TM de Área (AoE) · densidad 1,18x
                 </span>
               </label>
-
-              <div className="flex-1 flex items-center gap-2 p-2 rounded-lg bg-slate-900 border border-slate-800">
-                <input
-                  type="checkbox"
-                  checked={hasElementalTm}
-                  onChange={(e) => setHasElementalTm(e.target.checked)}
-                  className="rounded accent-amber-500 h-4 w-4"
-                />
-                <span className="text-xs text-slate-300 whitespace-nowrap">TM elemental</span>
-                <select
-                  value={elementalTmType}
-                  onChange={(e) => setElementalTmType(e.target.value)}
-                  disabled={!hasElementalTm}
-                  className="min-w-0 flex-1 rounded bg-slate-950 border border-slate-800 px-1.5 py-1 text-[10px] text-white disabled:opacity-50"
-                >
-                  {typesList.filter((t) => t !== 'ALL').map((type) => (
-                    <option key={type} value={type}>{type}</option>
-                  ))}
-                </select>
-              </div>
 
               <label className="flex-1 flex items-center gap-2 p-2 rounded-lg bg-amber-500/10 border border-amber-500/30 cursor-pointer hover:bg-amber-500/15">
                 <input
