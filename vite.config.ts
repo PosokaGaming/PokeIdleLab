@@ -31,12 +31,26 @@ export default defineConfig(() => {
           try {
             const data = JSON.parse(body);
             if (!data || data.source !== 'pokegrid' || !Number.isFinite(Number(data.targetId))) {
+              console.log('[POKEGRID] Payload rechazado: datos inválidos');
               res.statusCode = 400; res.end('invalid hunt analyzer payload'); return;
             }
             latestHuntAnalyzer = data;
+            console.log(
+              '[POKEGRID] Datos recibidos:',
+              `targetId=${data.targetId}`,
+              `huntLevel=${data.huntLevel ?? '-'}`,
+              `kills=${data.kills ?? '-'}`,
+              `elapsed=${data.elapsedSeconds ?? '-'}s`,
+              `xp=${data.xpGained ?? '-'}`,
+              `slug=${data.huntSlug ?? '-'}`
+            );
+            console.log('[POKEGRID] Calibración disponible para PokeIdleLab.');
             res.setHeader('Content-Type', 'application/json');
             res.end(JSON.stringify({ ok: true }));
-          } catch { res.statusCode = 400; res.end('invalid json'); }
+          } catch {
+            console.log('[POKEGRID] Payload rechazado: JSON inválido');
+            res.statusCode = 400; res.end('invalid json');
+          }
         });
         return;
       });
