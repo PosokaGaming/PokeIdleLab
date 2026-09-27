@@ -9,7 +9,7 @@
 (async function () {
   'use strict';
 
-  const ENDPOINT = 'http://127.0.0.1:3000/api/pokegrid-hunt';
+  const ENDPOINT = 'http://localhost:3000/api/pokegrid-hunt';
   const POLL_MS = 30000;
   let creatures = null;
   let lastSentKey = '';
