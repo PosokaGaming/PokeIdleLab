@@ -6,7 +6,7 @@
  * persistentes en el navegador.
  *
  * Formato de entrada:
- *   recordHuntCalibration({ targetId, huntLevel, kills, elapsedSeconds, xpGained, xpBonusMultiplier, leaderId, leaderKey })
+ *   recordHuntCalibration({ targetId, huntLevel, kills, elapsedSeconds, xpGained, leaderId, leaderKey })
  *
  * El mismo contrato puede recibir datos de un futuro bridge de Hunt Analyzer
  * mediante postMessage con type = "POKEGRID_HUNT_CALIBRATION".
@@ -21,12 +21,6 @@ export interface HuntCalibrationSample {
   kills: number;
   elapsedSeconds: number;
   xpGained?: number;
-  /**
-   * Multiplicador de XP activo en la sesión (ver getXpBonusMultiplier). Permite
-   * guardar la XP "base" y reaplicar los bonus que el usuario tenga activos
-   * ahora. Las muestras antiguas no lo traen: su XP no se usa, su ciclo sí.
-   */
-  xpBonusMultiplier?: number;
   leaderId?: number;
   leaderKey?: string;
   createdAt: number;
@@ -34,32 +28,19 @@ export interface HuntCalibrationSample {
 
 export interface HuntCalibration {
   cycleSeconds: number;
-  /** XP por derrota SIN bonus (VIP, evento); el optimizador reaplica los activos. */
-  baseXpPerKill?: number;
+  xpPerKill?: number;
   sampleCount: number;
   totalKills: number;
   source: 'real' | 'seed';
   lastUpdated: number;
 }
 
-export type HuntCalibrationInput = Omit<HuntCalibrationSample, 'id' | 'createdAt'>;
-
-const STORAGE_KEY = 'pokeIdleLab.huntCalibration.v1';
+// v2: invalida las muestras antiguas tomadas con el modelo de cadencia anterior.
+// Las muestras viejas podían fijar Hunt 150 en ~413.79 kills/h (8.70 s/ciclo).
+const STORAGE_KEY = 'pokeIdleLab.huntCalibration.v2';
 const MIN_SESSION_SECONDS = 5 * 60;
 const MIN_SESSION_KILLS = 10;
 const MAX_SAMPLES_PER_TARGET = 30;
-export const CALIBRATION_UPDATED_EVENT = 'pokeidlelab:calibration-updated';
-
-const HUNT_LEVEL_BY_ID = new Map(POKEMON_TIER_DATA.map((p) => [p.id, p.huntLevel]));
-
-/**
- * Los bonus de XP del juego se SUMAN sobre la base: la recompensa visible en
- * una hunt Lv.150 es 13.508 base + 6.754 VIP + 13.508 evento = 33.770 (×2,5,
- * no ×3), y las sesiones reales de Ancient Pinsir y Meganium dan 32.600-33.400.
- */
-export function getXpBonusMultiplier(isVip: boolean, hasDoubleXpEvent: boolean): number {
-  return 1 + (isVip ? 0.5 : 0) + (hasDoubleXpEvent ? 1 : 0);
-}
 
 /**
  * Semillas migradas de las referencias reales que ya estaban en el optimizador.
@@ -80,11 +61,10 @@ const SEEDED_LEVEL_CALIBRATIONS: Record<number, number> = {
   150: 3600 / 295
 };
 
-/** XP por derrota observada en la sesión real y los bonus que estaban activos. */
-const SEEDED_XP_PER_KILL: Record<number, { xpPerKill: number; xpBonusMultiplier: number }> = {
-  878: { xpPerKill: 22159.25, xpBonusMultiplier: getXpBonusMultiplier(true, false) }, // Brave Venusaur, solo VIP
-  907: { xpPerKill: 33414.1440860215, xpBonusMultiplier: getXpBonusMultiplier(true, true) }, // Ancient Pinsir, VIP + evento
-  903: { xpPerKill: 32602.6419753086, xpBonusMultiplier: getXpBonusMultiplier(true, true) } // Ancient Meganium, VIP + evento
+const SEEDED_XP_FACTORS: Record<number, number> = {
+  878: 22159.25,
+  907: 33414.1440860215,
+  903: 32602.6419753086
 };
 
 function canUseStorage(): boolean {
@@ -112,10 +92,6 @@ function writeSamples(samples: HuntCalibrationSample[]): void {
   }
 }
 
-function notifyCalibrationUpdated(): void {
-  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent(CALIBRATION_UPDATED_EVENT));
-}
-
 function keyFor(targetId: number, huntLevel?: number): string {
   return huntLevel && huntLevel > 0 ? `${targetId}@${huntLevel}` : String(targetId);
 }
@@ -127,7 +103,15 @@ function weightedMean(values: Array<{ value: number; weight: number }>): number 
   return valid.reduce((sum, v) => sum + v.value * v.weight, 0) / totalWeight;
 }
 
-/** Hunt Lv. en el que aparece la especie, o undefined si el ID no existe. */
+export const CALIBRATION_UPDATED_EVENT = 'pokeidlelab:calibration-updated';
+
+function notifyCalibrationUpdated(): void {
+  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent(CALIBRATION_UPDATED_EVENT));
+}
+
+const HUNT_LEVEL_BY_ID = new Map(POKEMON_TIER_DATA.map((p) => [p.id, p.huntLevel]));
+
+/** Hunt Lv. de la especie si está en la tier list; el bridge puede mandar otros IDs del juego. */
 export function getSpeciesHuntLevel(targetId: number): number | undefined {
   return HUNT_LEVEL_BY_ID.get(targetId);
 }
@@ -141,49 +125,46 @@ export function clearHuntCalibration(): void {
   notifyCalibrationUpdated();
 }
 
+export type HuntCalibrationInput = Omit<HuntCalibrationSample, 'id' | 'createdAt'>;
+
 /** Devuelve por qué no se puede guardar la sesión, o null si es válida. */
 export function validateHuntCalibrationInput(input: HuntCalibrationInput): string | null {
-  const targetId = Number(input.targetId);
-  const speciesLevel = Number.isInteger(targetId) ? getSpeciesHuntLevel(targetId) : undefined;
-  if (speciesLevel === undefined) return `No existe ninguna especie con el ID ${input.targetId}.`;
-
-  const huntLevel = Number(input.huntLevel);
-  if (huntLevel > 0 && huntLevel !== speciesLevel) {
-    return `Esa especie aparece en la Hunt Lv.${speciesLevel}, no en la Lv.${huntLevel}.`;
-  }
-
   const kills = Number(input.kills);
   const elapsedSeconds = Number(input.elapsedSeconds);
   if (!Number.isFinite(kills) || !Number.isFinite(elapsedSeconds) ||
       kills < MIN_SESSION_KILLS || elapsedSeconds < MIN_SESSION_SECONDS) {
     return 'La sesión debe tener al menos 10 kills y 5 minutos.';
   }
-
-  if (input.xpGained !== undefined && !(Number(input.xpGained) >= 0)) {
-    return 'La XP ganada debe ser un número positivo.';
+  if (!Number.isInteger(input.targetId) || input.targetId <= 0) return 'El ID de la presa debe ser un número entero positivo.';
+  const huntLevel = Number(input.huntLevel);
+  if (!Number.isInteger(huntLevel) || huntLevel < 0) return 'El Hunt Lv. debe ser un número entero.';
+  // El optimizador busca cada especie solo en su propio Hunt Lv.: otro nivel se
+  // guardaría pero nunca se usaría.
+  const speciesLevel = getSpeciesHuntLevel(input.targetId);
+  if (speciesLevel !== undefined && huntLevel > 0 && huntLevel !== speciesLevel) {
+    return `Esa especie aparece en la Hunt Lv.${speciesLevel}, no en la Lv.${huntLevel}.`;
   }
   return null;
 }
 
 export function recordHuntCalibration(input: HuntCalibrationInput): HuntCalibrationSample | null {
   if (validateHuntCalibrationInput(input)) return null;
+  const kills = Number(input.kills);
+  const elapsedSeconds = Number(input.elapsedSeconds);
 
-  const targetId = Number(input.targetId);
-  const xpBonusMultiplier = Number(input.xpBonusMultiplier);
   const sample: HuntCalibrationSample = {
     ...input,
-    targetId,
-    // Siempre el nivel de la especie: es el único con el que el optimizador la busca.
-    huntLevel: getSpeciesHuntLevel(targetId)!,
-    kills: Math.round(Number(input.kills)),
-    elapsedSeconds: Number(input.elapsedSeconds),
-    xpGained: input.xpGained !== undefined ? Number(input.xpGained) : undefined,
-    xpBonusMultiplier: xpBonusMultiplier > 0 ? xpBonusMultiplier : undefined,
+    huntLevel: Number(input.huntLevel) || getSpeciesHuntLevel(input.targetId) || 0,
+    kills: Math.round(kills),
+    elapsedSeconds,
+    xpGained: input.xpGained !== undefined && Number.isFinite(Number(input.xpGained))
+      ? Number(input.xpGained)
+      : undefined,
     id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
     createdAt: Date.now()
   };
 
-  const samples = readSamples();
+  const samples = readSamples().filter((s) => s.id !== sample.id);
   const targetKey = keyFor(sample.targetId, sample.huntLevel);
   const sameTarget = samples
     .filter((s) => keyFor(s.targetId, s.huntLevel) === targetKey)
@@ -197,41 +178,30 @@ export function recordHuntCalibration(input: HuntCalibrationInput): HuntCalibrat
   return sample;
 }
 
-/**
- * `samples` permite pasar las muestras ya leídas: el optimizador consulta las
- * ~450 especies en cada recálculo y no debe parsear localStorage cada vez.
- */
-export function getHuntCalibration(
-  targetId: number,
-  huntLevel?: number,
-  samples: HuntCalibrationSample[] = readSamples()
-): HuntCalibration | null {
-  const matching = samples.filter((s) => {
+export function getHuntCalibration(targetId: number, huntLevel?: number): HuntCalibration | null {
+  const samples = readSamples().filter((s) => {
     if (s.targetId !== targetId) return false;
     return !huntLevel || huntLevel <= 0 || s.huntLevel === huntLevel || s.huntLevel === 0;
   });
 
-  if (matching.length) {
+  if (samples.length) {
     const cycleSeconds = weightedMean(
-      matching.map((s) => ({ value: s.elapsedSeconds / s.kills, weight: s.kills }))
+      samples.map((s) => ({ value: s.elapsedSeconds / s.kills, weight: s.kills }))
     );
-    const baseXpPerKill = weightedMean(
-      matching
-        .filter((s) => s.xpGained !== undefined && Number(s.xpBonusMultiplier) > 0)
-        .map((s) => ({
-          value: Number(s.xpGained) / s.kills / Number(s.xpBonusMultiplier),
-          weight: s.kills
-        }))
+    const xpPerKill = weightedMean(
+      samples
+        .filter((s) => s.xpGained !== undefined)
+        .map((s) => ({ value: Number(s.xpGained) / s.kills, weight: s.kills }))
     );
 
     if (cycleSeconds) {
       return {
         cycleSeconds,
-        baseXpPerKill,
-        sampleCount: matching.length,
-        totalKills: matching.reduce((sum, s) => sum + s.kills, 0),
+        xpPerKill,
+        sampleCount: samples.length,
+        totalKills: samples.reduce((sum, s) => sum + s.kills, 0),
         source: 'real',
-        lastUpdated: Math.max(...matching.map((s) => s.createdAt))
+        lastUpdated: Math.max(...samples.map((s) => s.createdAt))
       };
     }
   }
@@ -239,10 +209,9 @@ export function getHuntCalibration(
   const seededCycle = SEEDED_CALIBRATIONS[targetId] ?? SEEDED_LEVEL_CALIBRATIONS[huntLevel || 0];
   if (seededCycle === undefined) return null;
 
-  const seededXp = SEEDED_XP_PER_KILL[targetId];
   return {
     cycleSeconds: seededCycle,
-    baseXpPerKill: seededXp ? seededXp.xpPerKill / seededXp.xpBonusMultiplier : undefined,
+    xpPerKill: SEEDED_XP_FACTORS[targetId],
     sampleCount: 0,
     totalKills: 0,
     source: 'seed',
@@ -257,7 +226,6 @@ export interface PokeGridCalibrationMessage {
   kills: number;
   elapsedSeconds: number;
   xpGained?: number;
-  xpBonusMultiplier?: number;
   leaderId?: number;
   leaderKey?: string;
 }
@@ -269,24 +237,78 @@ export interface PokeGridCalibrationMessage {
 export function installHuntCalibrationBridge(): () => void {
   if (typeof window === 'undefined') return () => undefined;
 
-  const handler = (event: MessageEvent<PokeGridCalibrationMessage>) => {
-    const data = event.data;
+  let lastRemoteKey = '';
+
+  const apply = (data: PokeGridCalibrationMessage) => {
     if (!data || data.type !== 'POKEGRID_HUNT_CALIBRATION') return;
-    // Solo mensajes de la propia ventana: la extensión corre dentro del juego, así
-    // que el bridge vive en la misma página. Otra ventana o marco no puede inyectar.
-    if (event.source !== window || event.origin !== window.location.origin) return;
+    const key = [
+      data.targetId,
+      data.huntLevel || 0,
+      data.kills,
+      data.elapsedSeconds,
+      data.xpGained ?? ''
+    ].join('|');
+    if (key === lastRemoteKey) return;
+    lastRemoteKey = key;
+
+    // recordHuntCalibration ya avisa a la tabla si guardó la muestra.
     recordHuntCalibration({
-      targetId: Number(data.targetId),
-      huntLevel: Number(data.huntLevel) || 0,
+      targetId: data.targetId,
+      huntLevel: data.huntLevel || 0,
       kills: data.kills,
       elapsedSeconds: data.elapsedSeconds,
       xpGained: data.xpGained,
-      xpBonusMultiplier: data.xpBonusMultiplier,
       leaderId: data.leaderId,
       leaderKey: data.leaderKey
     });
   };
 
+  const handler = (event: MessageEvent<PokeGridCalibrationMessage>) => {
+    const data = event.data;
+    if (!data || data.type !== 'POKEGRID_HUNT_CALIBRATION') return;
+    if (event.source !== window || event.origin !== window.location.origin) return;
+    apply(data);
+  };
+
   window.addEventListener('message', handler);
-  return () => window.removeEventListener('message', handler);
+
+  let stopped = false;
+  let timer: number | undefined;
+
+  const poll = async () => {
+    if (stopped) return;
+    try {
+      const response = await fetch('/api/pokegrid-hunt', { cache: 'no-store' });
+      if (response.ok) {
+        const data = await response.json();
+        if (data && data.source === 'pokegrid') {
+          apply({
+            type: 'POKEGRID_HUNT_CALIBRATION',
+            targetId: Number(data.targetId),
+            huntLevel: Number(data.huntLevel) || 0,
+            kills: Number(data.kills),
+            elapsedSeconds: Number(data.elapsedSeconds),
+            xpGained: data.xpGained === undefined ? undefined : Number(data.xpGained),
+            leaderId: data.leaderId === undefined ? undefined : Number(data.leaderId),
+            leaderKey: data.leaderKey
+          });
+        }
+      }
+    } catch {
+      // PokeGrid no está conectado o el servidor local aún no está disponible.
+    } finally {
+      if (!stopped) timer = window.setTimeout(poll, 5000);
+    }
+  };
+
+  // Dentro del juego (extensión) la ruta relativa apuntaría al servidor de
+  // poke.idleworld.online: solo se escucha postMessage de la misma página.
+  const inGameExtension = (window as Window & { __POKEIDLELAB_EXTENSION__?: boolean }).__POKEIDLELAB_EXTENSION__ === true;
+  if (!inGameExtension) poll();
+
+  return () => {
+    stopped = true;
+    window.removeEventListener('message', handler);
+    if (timer !== undefined) window.clearTimeout(timer);
+  };
 }

@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { installHuntCalibrationBridge } from './data/huntCalibration';
 import { Header } from './components/Header';
 import { Footer } from './components/Footer';
 import { TierList } from './components/TierList';
@@ -9,6 +10,8 @@ import { HuntXpOptimizer } from './components/HuntXpOptimizer';
 import { OfficialPokemon, POKEMON_TIER_DATA } from './data/pokemonTierData';
 
 export default function App() {
+  useEffect(() => installHuntCalibrationBridge(), []);
+
   const [activeTab, setActiveTab] = useState<
     'tierlist' | 'power' | 'calculators' | 'items'
   >('tierlist');

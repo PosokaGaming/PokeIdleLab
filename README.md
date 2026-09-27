@@ -1,8 +1,15 @@
-# PokeIdleLab
+# PokéIdle Compendium (PokeIdleLab)
 
-Extensión para [Poke Idle World](https://poke.idleworld.online) que suma, **dentro del juego**, la tier list, la calculadora de rareza + IV, el optimizador de XP/h, la base de objetos, el Analyzer de IV sobre los tooltips y el aviso de ventas del Global Market.
+Enciclopedia y optimizador **no oficial** para [poke.idleworld.online](https://poke.idleworld.online/), que se usa **dentro del juego** como extensión: aparece la pestaña **PokeIdleLab** en el borde derecho (se cierra con **×** o **Esc**).
 
-En el juego aparece la pestaña **PokeIdleLab** en el borde derecho. Se cierra con **×** o **Esc**.
+## Características
+
+- **Tier List** — Meta de jugadores, ranking por stats base y ranking Lv.1
+- **Calculadora de Rareza + IVs** — Power real según calidad e IVs
+- **Optimizador EXP/h** — Ranking de presas por XP/hora con calibración real
+- **Base de objetos** — Catálogo de items del juego
+- **Equipo guardado** — Hasta 6 Pokémon en localStorage
+- **Analyzer de IV** sobre los tooltips del juego y **aviso de ventas** del Global Market
 
 ## Instalar como extensión (Chrome, Edge, Brave, Opera)
 
@@ -21,14 +28,37 @@ Si tenías instalados los scripts sueltos del Analyzer o de ventas, desactivalos
 
 ## Desarrollo
 
-```
+```bash
 npm ci --legacy-peer-deps
-npm run dev               # la web en http://localhost:3000
+npm run dev               # http://localhost:3000 (con el endpoint del bridge de PokeGrid)
 npm run build:extension   # regenera extension/ (manifest.json + pokeidlelab.user.js)
+npm run lint              # tsc --noEmit
 ```
 
 - Antes de publicar, subí `version` en `package.json`: es la versión de la extensión y el `@version` de Tampermonkey, que solo actualiza si cambia.
-- El Analyzer y el aviso de ventas viven en `scripts/pokeidlelab-iv.user.js` y `scripts/pokeidlelab-market-sales.user.js`; la extensión los incluye al construirse, así que después de tocarlos hay que correr `npm run build:extension`.
-- Para la versión estable, que Tampermonkey actualiza desde `Poke-Idle-Lab-Estable`: `$env:USERSCRIPT_REPO='Poke-Idle-Lab-Estable'; npm run build:extension` (PowerShell).
+- El Analyzer y el aviso de ventas viven en `scripts/`; la extensión los incluye al construirse, así que después de tocarlos hay que correr `npm run build:extension`.
+- Para publicar desde otro repo (un fork, la versión estable): `$env:USERSCRIPT_OWNER='PosokaGaming'; $env:USERSCRIPT_REPO='PokeIdleLab'; npm run build:extension` (PowerShell).
 - Los íconos salen de `node tools/make-icons.mjs`.
-- `iniciar-web.bat` sigue levantando la web local, sin extensión; necesita Node.js.
+
+## Estructura relevante
+
+```
+extension/                # la extensión lista para cargar (generada)
+scripts/                  # Analyzer de IV y aviso de ventas (userscripts)
+src/
+  userscript/main.tsx     # entrada de la extensión: monta la web en el juego
+  components/
+    HuntXpOptimizer.tsx   # UI del optimizador EXP/h
+    shared/SpeciesSelect.tsx
+  data/
+    huntCombat.ts         # Motor puro de simulación de combate
+    calculatorHelpers.ts  # Fórmulas de stats, tipos, zonas
+    huntCalibration.ts    # Muestras reales de cadencia
+    pokemonTierData.ts
+    itemsData.ts
+```
+
+## Disclaimer
+
+Proyecto fan-made. Pokémon es marca registrada de Nintendo / Game Freak.
+No está afiliado a poke.idleworld.online.

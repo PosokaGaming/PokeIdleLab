@@ -6,8 +6,8 @@
  *
  *   npm run build:extension
  *
- * USERSCRIPT_REPO elige de qué repo se actualiza Tampermonkey
- * (PokeIdleLab por defecto; Poke-Idle-Lab-Estable para la versión estable).
+ * USERSCRIPT_OWNER y USERSCRIPT_REPO eligen de qué repo se actualiza Tampermonkey
+ * (GigaBuda/PokeIdleLab por defecto; un fork o Poke-Idle-Lab-Estable si se publica ahí).
  */
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
@@ -15,9 +15,10 @@ import { readFileSync } from 'node:fs';
 import { defineConfig, type Plugin } from 'vite';
 
 const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'));
+const owner = process.env.USERSCRIPT_OWNER || 'GigaBuda';
 const repo = process.env.USERSCRIPT_REPO || 'PokeIdleLab';
 const fileName = 'pokeidlelab.user.js';
-const rawUrl = `https://raw.githubusercontent.com/GigaBuda/${repo}/main/extension/${fileName}`;
+const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/main/extension/${fileName}`;
 const description =
   'Tier list, calculadoras, optimizador de XP y objetos dentro de Poke Idle World, con el Analyzer de IV y el aviso de ventas.';
 

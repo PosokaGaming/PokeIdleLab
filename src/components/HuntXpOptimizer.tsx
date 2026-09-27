@@ -33,14 +33,7 @@ import {
 } from 'lucide-react';
 import { POKEMON_TIER_DATA, OfficialPokemon } from '../data/pokemonTierData';
 import { ITEMS_DATA } from '../data/itemsData';
-import {
-  CALIBRATION_UPDATED_EVENT,
-  getHuntCalibration,
-  getHuntCalibrationSamples,
-  getXpBonusMultiplier,
-  installHuntCalibrationBridge,
-  HuntCalibration
-} from '../data/huntCalibration';
+import { getHuntCalibration, installHuntCalibrationBridge } from '../data/huntCalibration';
 import { HuntCalibrationPanel } from './HuntCalibrationPanel';
 import {
   calculateStat,
@@ -72,7 +65,7 @@ export type SortField =
   | 'xpPerKill'
   | 'wildLevel'
   | 'potionSafety'
-  | 'lootPerHour';
+  | 'netProfit';
 
 export type SortDirection = 'asc' | 'desc';
 
@@ -83,27 +76,19 @@ const normalize = (t: string) => t.toLowerCase().normalize('NFD').replace(/[\u03
  * Las sesiones reales aportan segundos por derrota; las muestras conocidas
  * se conservan como referencias y el resto usa un modelo continuo calibrado.
  */
-const REAL_HUNT_REFERENCE_CYCLE_SECONDS = 8.70;
-const REAL_HUNT_REFERENCE_WALK_SECONDS = 7.00;
-const REAL_HUNT_REFERENCE_COMBAT_SECONDS = 0.60;
-const XP_CALIBRATION_FACTOR = 0.9953234328;
-const POKEGRID_TM_POWER = 300;
-const POKEGRID_TM_COOLDOWN_SECONDS = 10;
-const POKEGRID_TM_TARGETS = 2;
+// Hunt 150: referencia global observada (~295 kills/h) usada solo para
+// convertir el Bulk dinámico en tiempo de combate cuando no hay una muestra
+// real específica de esa presa.
+const HUNT_REFERENCE_CYCLE_SECONDS = 3600 / 295;
+const HUNT_REFERENCE_WALK_SECONDS = 7.00;
+const HUNT_REFERENCE_COMBAT_SECONDS =
+  HUNT_REFERENCE_CYCLE_SECONDS - HUNT_REFERENCE_WALK_SECONDS;
+// Bulk de normalización: Pokémon neutro 80 HP / 80 Def a Hunt 150,
+// IV salvaje 96 y Quality 1.00 -> HP 840, Def 168 -> 2822.4.
+const HUNT_REFERENCE_BULK = 2822.4;
 const REAL_HUNT_AOE_TARGET_MULTIPLIER = 16.5 / 14;
 
 type HuntMove = OfficialPokemon['attacks'][number] & { isCustom?: boolean };
-
-const XP_BONUS_STORAGE_KEY = 'pokeidle_xp_bonuses_v1';
-
-function readXpBonuses(): { vip: boolean; event: boolean } {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(XP_BONUS_STORAGE_KEY) || '{}');
-    return { vip: parsed?.vip === true, event: parsed?.event === true };
-  } catch {
-    return { vip: false, event: false };
-  }
-}
 
 interface HuntCombatProjection {
   wildMaxHp: number;
@@ -125,7 +110,6 @@ interface HuntCombatProjection {
   combatTimeSeconds: number;
   totalCycleSeconds: number;
   killsPerHourExact: number;
-  tmKillsPerHourExact: number;
   elementalMultiplier: number;
 }
 
@@ -150,10 +134,7 @@ function projectHuntCombat(
   clanRank: number,
   clanType: string,
   hasAoeBonus: boolean,
-  hasElementalTm: boolean,
-  elementalTmType: string,
-  forcedMove: HuntMove | undefined,
-  calibration: HuntCalibration | null
+  forcedMove?: HuntMove
 ): HuntCombatProjection {
   const statGrowth = ivTotal / 6;
   const clanMatches =
@@ -247,31 +228,39 @@ function projectHuntCombat(
   };
 
   const finalDamagePerHit = Math.max(1, Math.round(selected.continuousDamagePerHit));
+  // Bulk efectivo = HP × Defensa relevante. La defensa relevante es la que
+  // realmente recibe el ataque elegido (Def para físico / Def.Es para especial).
+  // Este valor es el que gobierna la cadencia: menos Bulk => menos tiempo por
+  // combate => más kills/h; más Bulk => más tiempo => menos kills/h.
   const effectiveBulk = Math.round(wildMaxHp * (selected.targetDefense / 50));
-  const hitsToKill = Math.max(1, Math.ceil(wildMaxHp / finalDamagePerHit));
   const continuousHitsToKill = Math.max(
-    0.1,
+    1,
     wildMaxHp / selected.continuousDamagePerHit
   );
-  // El tiempo real de combate debe respetar golpes completos: no podemos
-  // contar 4.2 golpes como 4.2 ataques. La Defensa del salvaje entra aquí
-  // porque determina el daño por golpe y, por tanto, los golpes necesarios.
-  const combatTimeSeconds = hitsToKill * attackIntervalSeconds;
+  const combatHitsToKill = Math.max(1, Math.ceil(continuousHitsToKill));
+  const hitsToKill = combatHitsToKill;
 
-  // Una sesión real fija el ciclo con el combate de referencia (0,6 s) y el
-  // daño del atacante lo desplaza. El ciclo de respaldo ya incluye el combate
-  // propio: sumarle también el delta contaba el combate dos veces.
-  const calibratedCycleSeconds = calibration?.cycleSeconds;
-  const fallbackCycleSeconds = Math.max(
-    REAL_HUNT_REFERENCE_CYCLE_SECONDS,
-    REAL_HUNT_REFERENCE_WALK_SECONDS + combatTimeSeconds
+  const calibration = getHuntCalibration(target.id, wildLevel);
+  const realCalibratedCycleSeconds =
+    calibration?.source === 'real'
+      ? calibration.cycleSeconds
+      : undefined;
+
+  // Sin una muestra real de esta presa, el tiempo de combate se escala
+  // directamente con su Bulk. La referencia de 295 kills/h fija la escala,
+  // no actúa como mínimo ni hace que todos los Hunt 150 duren lo mismo.
+  const bulkRatio = Math.max(0.05, effectiveBulk / HUNT_REFERENCE_BULK);
+  const bulkCombatTimeSeconds = Math.max(
+    attackIntervalSeconds,
+    HUNT_REFERENCE_COMBAT_SECONDS * bulkRatio
   );
-  const combatDeltaSeconds =
-    combatTimeSeconds - REAL_HUNT_REFERENCE_COMBAT_SECONDS;
+  const combatTimeSeconds = bulkCombatTimeSeconds;
+  const fallbackCycleSeconds =
+    HUNT_REFERENCE_WALK_SECONDS + combatTimeSeconds;
   const normalCycleSeconds = Math.max(
     0.6,
-    calibratedCycleSeconds !== undefined
-      ? calibratedCycleSeconds + combatDeltaSeconds
+    realCalibratedCycleSeconds !== undefined
+      ? realCalibratedCycleSeconds
       : fallbackCycleSeconds
   );
   const aoeTargetMultiplier = hasAoeBonus
@@ -279,31 +268,6 @@ function projectHuntCombat(
     : 1;
   const normalKillsPerHourExact =
     (3600 / normalCycleSeconds) * aoeTargetMultiplier;
-
-  let tmKillsPerHourExact = 0;
-  if (hasElementalTm) {
-    const tmType = elementalTmType.toUpperCase();
-    const tmIsSpecial = getMoveIsSpecial(tmType);
-    const tmOffense = tmIsSpecial ? pSpAtk : pAtk;
-    const tmEffectiveness = getAmplifiedMultiplier(
-      tmType,
-      target.type1,
-      target.type2
-    );
-    const tmStab = getMoveStab(attacker, tmType);
-    const tmDefense = tmIsSpecial ? wildSpDef : wildDef;
-    const tmRawDamage =
-      ((2 * level / 5 + 2) * POKEGRID_TM_POWER *
-        (tmOffense / Math.max(1, tmDefense))) / 50 + 2;
-    const tmDamageRatio = Math.min(
-      1,
-      Math.max(0, (tmRawDamage * tmEffectiveness * tmStab) / wildMaxHp)
-    );
-    tmKillsPerHourExact =
-      (3600 / POKEGRID_TM_COOLDOWN_SECONDS) *
-      POKEGRID_TM_TARGETS *
-      tmDamageRatio;
-  }
 
   return {
     wildMaxHp,
@@ -324,8 +288,7 @@ function projectHuntCombat(
     continuousHitsToKill,
     combatTimeSeconds,
     totalCycleSeconds: normalCycleSeconds,
-    killsPerHourExact: normalKillsPerHourExact + tmKillsPerHourExact,
-    tmKillsPerHourExact,
+    killsPerHourExact: normalKillsPerHourExact,
     elementalMultiplier: selected.elementalMultiplier
   };
 }
@@ -442,6 +405,13 @@ export const HuntXpOptimizer: React.FC<HuntXpOptimizerProps> = ({
 }) => {
   useEffect(() => installHuntCalibrationBridge(), []);
 
+  const [calibrationVersion, setCalibrationVersion] = useState(0);
+  useEffect(() => {
+    const onCalibrationUpdated = () => setCalibrationVersion((v) => v + 1);
+    window.addEventListener('pokeidlelab:calibration-updated', onCalibrationUpdated);
+    return () => window.removeEventListener('pokeidlelab:calibration-updated', onCalibrationUpdated);
+  }, []);
+
   // Attacker configuration (calibrated with user Typhlosion profile by default)
   const [selectedAttackerId, setSelectedAttackerId] = useState<number>(
     initialPokemon?.id || (savedTeam.length > 0 ? savedTeam[0].id : 157) // Default to Typhlosion
@@ -452,26 +422,7 @@ export const HuntXpOptimizer: React.FC<HuntXpOptimizerProps> = ({
   const [clanRank, setClanRank] = useState<number>(0); // Rank 0
   const [clanType, setClanType] = useState<string>('NONE');
   const [hasAoeBonus, setHasAoeBonus] = useState<boolean>(false); // Sin TM de área por defecto
-  const [hasElementalTm, setHasElementalTm] = useState<boolean>(false);
-  // VIP y evento arrancan apagados (el evento es temporal) y se recuerda la
-  // elección de cada usuario: con los dos encendidos la XP sale ×2,5.
-  const [isVipBonus, setIsVipBonus] = useState<boolean>(() => readXpBonuses().vip);
-  const [hasDoubleXpEvent, setHasDoubleXpEvent] = useState<boolean>(() => readXpBonuses().event);
-  useEffect(() => {
-    try {
-      localStorage.setItem(XP_BONUS_STORAGE_KEY, JSON.stringify({ vip: isVipBonus, event: hasDoubleXpEvent }));
-    } catch {}
-  }, [isVipBonus, hasDoubleXpEvent]);
-  const xpBonusMultiplier = getXpBonusMultiplier(isVipBonus, hasDoubleXpEvent);
-
-  // Las sesiones reales se leen de localStorage una vez por cambio, no por especie.
-  const [calibrationVersion, setCalibrationVersion] = useState(0);
-  useEffect(() => {
-    const onUpdate = () => setCalibrationVersion((v) => v + 1);
-    window.addEventListener(CALIBRATION_UPDATED_EVENT, onUpdate);
-    return () => window.removeEventListener(CALIBRATION_UPDATED_EVENT, onUpdate);
-  }, []);
-  const calibrationSamples = useMemo(() => getHuntCalibrationSamples(), [calibrationVersion]);
+  const [isVipBonus, setIsVipBonus] = useState<boolean>(false); // VIP desactivado por defecto; el usuario lo activa explícitamente.
 
   // Level Restriction Rule: Player level restricts hunts accessible
   const [restrictToPlayerLevel, setRestrictToPlayerLevel] = useState<boolean>(true);
@@ -505,9 +456,6 @@ export const HuntXpOptimizer: React.FC<HuntXpOptimizerProps> = ({
   const [selectedMoveName, setSelectedMoveName] = useState<string>('');
   const [customMovePower, setCustomMovePower] = useState<number>(50);
   const [selectedMoveType, setSelectedMoveType] = useState<string>(attackerPokemon.type1);
-  const [elementalTmType, setElementalTmType] = useState<string>(
-    initialPokemon?.type1 || attackerPokemon.type1
-  );
 
   // Available attacks learned by attacker
   const availableAttacks = useMemo(() => {
@@ -575,7 +523,6 @@ export const HuntXpOptimizer: React.FC<HuntXpOptimizerProps> = ({
     if (initialPokemon) {
       setSelectedAttackerId(initialPokemon.id);
       setSelectedMoveType(initialPokemon.type1);
-      setElementalTmType(initialPokemon.type1);
       setSelectedMoveName('');
     }
   }, [initialPokemon]);
@@ -593,7 +540,6 @@ export const HuntXpOptimizer: React.FC<HuntXpOptimizerProps> = ({
     const mon = POKEMON_TIER_DATA.find((p) => p.id === id);
     if (mon) {
       setSelectedMoveType(mon.type1);
-      setElementalTmType(mon.type1);
     }
   };
 
@@ -704,8 +650,6 @@ export const HuntXpOptimizer: React.FC<HuntXpOptimizerProps> = ({
           : undefined;
 
     return POKEMON_TIER_DATA.map((target) => {
-      const wildLevel = target.huntLevel || 50;
-      const calibration = getHuntCalibration(target.id, wildLevel, calibrationSamples);
       const combat = projectHuntCombat(
         attackerPokemon,
         target,
@@ -715,12 +659,10 @@ export const HuntXpOptimizer: React.FC<HuntXpOptimizerProps> = ({
         clanRank,
         clanType,
         hasAoeBonus,
-        hasElementalTm,
-        elementalTmType,
-        forcedMove,
-        calibration
+        forcedMove
       );
 
+      const wildLevel = target.huntLevel || 50;
       const isLevelLocked = wildLevel > playerLevel;
       // Tipo del Día es un bonus EXPLÍCITO y opt-in:
       // - NONE (valor inicial) = 0% para TODAS las especies.
@@ -739,16 +681,15 @@ export const HuntXpOptimizer: React.FC<HuntXpOptimizerProps> = ({
         selectedDailyType !== null &&
         (targetType1 === selectedDailyType || targetType2 === selectedDailyType);
       const dailyXpMult = hasDailyTypeBonus ? 1.2 : 1;
-      // La XP calibrada se guarda sin bonus: VIP y evento se reaplican siempre,
-      // así apagarlos baja también las presas con sesión real.
-      const calibratedXpPerKill =
-        calibration?.baseXpPerKill !== undefined
-          ? calibration.baseXpPerKill * xpBonusMultiplier * dailyXpMult
-          : target.experience * xpBonusMultiplier * dailyXpMult * XP_CALIBRATION_FACTOR;
-      const xpPerKill = Math.round(calibratedXpPerKill);
+      const vipXpMult = isVipBonus ? 1.5 : 1;
+      // La XP por kill sale exclusivamente de la recompensa base del objetivo.
+      // Los eventos temporales se aplican manualmente fuera de esta calculadora.
+      const baseXp = Math.max(0, Number(target.experience) || 0);
+      const xpPerKillExact = baseXp * vipXpMult * dailyXpMult;
+      const xpPerKill = Math.round(xpPerKillExact);
       const xpPerHourExact =
         combat.killsPerHourExact *
-        calibratedXpPerKill;
+        xpPerKillExact;
       const xpPerHour = Math.round(xpPerHourExact);
 
       let defenseTier: 'fragile' | 'medium' | 'tank' = 'medium';
@@ -780,7 +721,7 @@ export const HuntXpOptimizer: React.FC<HuntXpOptimizerProps> = ({
 
       const timeToKillSeconds = +Math.max(
         0.6,
-        combat.totalCycleSeconds - REAL_HUNT_REFERENCE_WALK_SECONDS
+        combat.totalCycleSeconds - HUNT_REFERENCE_WALK_SECONDS
       ).toFixed(1);
       const wildHitsDealt =
         combat.hitsToKill === 1 ? 0 : Math.max(0, Math.floor(timeToKillSeconds / 1.5));
@@ -803,6 +744,8 @@ export const HuntXpOptimizer: React.FC<HuntXpOptimizerProps> = ({
         }
       }
 
+      const captureValuePerKill = (target.priceNpc || 1500) / 47;
+      const captureValuePerHour = Math.round(combat.killsPerHourExact * captureValuePerKill);
       // El +20% de loot usa exactamente la misma condición que el +20% XP:
       // solo la especie cuyo type1/type2 coincide con el tipo seleccionado.
       const dailyLootMult = hasDailyTypeBonus ? 1.2 : 1;
@@ -812,8 +755,9 @@ export const HuntXpOptimizer: React.FC<HuntXpOptimizerProps> = ({
       const BALL_COST_PER_KILL = 90;
       const POTION_UNIT_COST = 75;
       const potionCostPerKill = (potionsPer100Kills / 100) * POTION_UNIT_COST;
-      const supplyPerKill = potionCostPerKill + BALL_COST_PER_KILL;
+      const supplyPerKill = Math.max(BALL_COST_PER_KILL, potionCostPerKill + BALL_COST_PER_KILL);
       const supplyCostPerHour = Math.round(combat.killsPerHourExact * supplyPerKill);
+      const netProfitPerHour = Math.round(grossLootPerHour + captureValuePerHour - supplyCostPerHour);
 
       let safetyGrade: 'safe' | 'moderate' | 'danger' = 'safe';
       let safetyLabel = '100% Seguro (0 Pociones)';
@@ -845,9 +789,8 @@ export const HuntXpOptimizer: React.FC<HuntXpOptimizerProps> = ({
         wildDamagePerHit, totalDamageTakenPerKill,
         potionsPer100Kills, safetyGrade, safetyLabel,
         expectedLootValuePerKill, dropsBreakdown,
-        grossLootPerHour, supplyCostPerHour,
+        grossLootPerHour, supplyCostPerHour, netProfitPerHour,
         hasDailyTypeBonus,
-        tmKillsPerHour: Math.round(combat.tmKillsPerHourExact),
         continuousDamagePerHit: combat.continuousDamagePerHit,
         aoeTargetMultiplier: hasAoeBonus ? REAL_HUNT_AOE_TARGET_MULTIPLIER : 1,
         usedAutoMove: !forcedMove
@@ -855,9 +798,10 @@ export const HuntXpOptimizer: React.FC<HuntXpOptimizerProps> = ({
     });
   }, [
     attackerPokemon, playerLevel, playerTotalIv, playerQuality,
-    clanRank, clanType, hasAoeBonus, hasElementalTm, elementalTmType,
-    xpBonusMultiplier, calibrationSamples, itemPriceMap, dailyTypeBonus, selectedMoveName,
-    selectedMoveType, customMovePower, currentMove, attackerStats.pDef
+    clanRank, clanType, hasAoeBonus,
+    isVipBonus, itemPriceMap, dailyTypeBonus, selectedMoveName,
+    selectedMoveType, customMovePower, currentMove, attackerStats.pDef,
+    calibrationVersion
   ]);
 
   // 2. Filtered and Sorted Targets for the detailed table below
@@ -936,8 +880,8 @@ export const HuntXpOptimizer: React.FC<HuntXpOptimizerProps> = ({
         comparison = a.wildLevel - b.wildLevel;
       } else if (sortBy === 'potionSafety') {
         comparison = a.potionsPer100Kills - b.potionsPer100Kills;
-      } else if (sortBy === 'lootPerHour') {
-        // Loot real esperado de los drops (valor NPC)
+      } else if (sortBy === 'netProfit') {
+        // Ordenar por loot real (gross) en lugar del neto
         comparison = a.grossLootPerHour - b.grossLootPerHour;
       }
 
@@ -1099,7 +1043,7 @@ export const HuntXpOptimizer: React.FC<HuntXpOptimizerProps> = ({
 
   return (
     <div className="space-y-6">
-      <HuntCalibrationPanel xpBonusMultiplier={xpBonusMultiplier} />
+      <HuntCalibrationPanel />
       {/* Top Section: Attacker Setup & Hero #1 Target */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Attacker (Player) Controls - 7 cols */}
@@ -1385,26 +1329,6 @@ export const HuntXpOptimizer: React.FC<HuntXpOptimizerProps> = ({
                 </span>
               </label>
 
-              <div className="flex-1 flex items-center gap-2 p-2 rounded-lg bg-slate-900 border border-slate-800">
-                <input
-                  type="checkbox"
-                  checked={hasElementalTm}
-                  onChange={(e) => setHasElementalTm(e.target.checked)}
-                  className="rounded accent-amber-500 h-4 w-4"
-                />
-                <span className="text-xs text-slate-300 whitespace-nowrap">TM elemental</span>
-                <select
-                  value={elementalTmType}
-                  onChange={(e) => setElementalTmType(e.target.value)}
-                  disabled={!hasElementalTm}
-                  className="min-w-0 flex-1 rounded bg-slate-950 border border-slate-800 px-1.5 py-1 text-[10px] text-white disabled:opacity-50"
-                >
-                  {typesList.filter((t) => t !== 'ALL').map((type) => (
-                    <option key={type} value={type}>{type}</option>
-                  ))}
-                </select>
-              </div>
-
               <label className="flex-1 flex items-center gap-2 p-2 rounded-lg bg-amber-500/10 border border-amber-500/30 cursor-pointer hover:bg-amber-500/15">
                 <input
                   type="checkbox"
@@ -1416,18 +1340,6 @@ export const HuntXpOptimizer: React.FC<HuntXpOptimizerProps> = ({
                   VIP — +50% EXP
                 </span>
               </label>
-              <label className="flex-1 flex items-center gap-2 p-2 rounded-lg bg-yellow-500/10 border border-yellow-500/30 cursor-pointer hover:bg-yellow-500/15">
-                <input
-                  type="checkbox"
-                  checked={hasDoubleXpEvent}
-                  onChange={(e) => setHasDoubleXpEvent(e.target.checked)}
-                  className="rounded accent-yellow-500 h-4 w-4"
-                />
-                <span className="text-xs text-yellow-300 font-semibold">
-                  ⚡ Evento XP ×2 — Entrenador + Pokémon
-                </span>
-              </label>
-
               <label className="flex-1 flex items-center gap-2 p-2 rounded-lg bg-amber-500/10 border border-amber-500/30 cursor-pointer hover:bg-amber-500/15">
                 <input
                   type="checkbox"
@@ -1910,13 +1822,13 @@ export const HuntXpOptimizer: React.FC<HuntXpOptimizerProps> = ({
                 <th className="p-3 text-right">
                   <button
                     type="button"
-                    onClick={() => handleColumnSort('lootPerHour')}
+                    onClick={() => handleColumnSort('netProfit')}
                     className="inline-flex items-center gap-1 uppercase font-bold hover:text-amber-400 transition-colors ml-auto text-emerald-400"
                     title="Ordenar por Loot real/h (valor esperado de drops al NPC)"
                   >
                     <Coins className="h-3 w-3 text-emerald-400" />
                     <span>Loot real ($/h)</span>
-                    {sortBy === 'lootPerHour' ? (
+                    {sortBy === 'netProfit' ? (
                       sortDirection === 'asc' ? <ArrowUp className="h-3 w-3 text-amber-400" /> : <ArrowDown className="h-3 w-3 text-amber-400" />
                     ) : (
                       <ArrowUpDown className="h-3 w-3 text-slate-600 hover:text-slate-400" />

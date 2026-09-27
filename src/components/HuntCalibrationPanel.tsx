@@ -11,12 +11,7 @@ import {
 } from '../data/huntCalibration';
 import { POKEMON_TIER_DATA } from '../data/pokemonTierData';
 
-interface HuntCalibrationPanelProps {
-  /** Bonus de XP activos en el optimizador: se guardan con la sesión. */
-  xpBonusMultiplier: number;
-}
-
-export const HuntCalibrationPanel: React.FC<HuntCalibrationPanelProps> = ({ xpBonusMultiplier }) => {
+export const HuntCalibrationPanel: React.FC = () => {
   const [targetId, setTargetId] = useState('907');
   const [huntLevel, setHuntLevel] = useState('150');
   const [kills, setKills] = useState('100');
@@ -40,7 +35,7 @@ export const HuntCalibrationPanel: React.FC<HuntCalibrationPanelProps> = ({ xpBo
   );
 
   const calibration = useMemo(
-    () => getHuntCalibration(Number(targetId), Number(huntLevel), samples),
+    () => getHuntCalibration(Number(targetId), Number(huntLevel)),
     [targetId, huntLevel, samples]
   );
 
@@ -57,8 +52,7 @@ export const HuntCalibrationPanel: React.FC<HuntCalibrationPanelProps> = ({ xpBo
       huntLevel: Number(huntLevel),
       kills: Number(kills),
       elapsedSeconds: Number(minutes) * 60,
-      xpGained: xp.trim() ? Number(xp) : undefined,
-      xpBonusMultiplier
+      xpGained: xp.trim() ? Number(xp) : undefined
     };
     const error = validateHuntCalibrationInput(input);
     const sample = error ? null : recordHuntCalibration(input);
@@ -80,7 +74,6 @@ export const HuntCalibrationPanel: React.FC<HuntCalibrationPanelProps> = ({ xpBo
           <h3 className="text-sm font-bold text-cyan-200">Calibración real de Hunts</h3>
           <p className="text-[11px] text-slate-400 mt-1">
             Las sesiones reales sustituyen automáticamente la cadencia estimada y se guardan en este navegador.
-            La XP se guarda junto con los bonus (VIP, evento) que tengas marcados arriba.
             También acepta datos enviados por un bridge de Hunt Analyzer.
           </p>
         </div>

@@ -116,6 +116,9 @@ function Extension({ host }: { host: HTMLElement }) {
 
 function mount(): void {
   if (document.getElementById(HOST_ID)) return;
+  // Le indica a la web que corre dentro del juego (p. ej. el bridge de
+  // calibración no debe consultar /api en el servidor de poke.idleworld.online).
+  (window as Window & { __POKEIDLELAB_EXTENSION__?: boolean }).__POKEIDLELAB_EXTENSION__ = true;
 
   const host = document.createElement('div');
   host.id = HOST_ID;
