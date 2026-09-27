@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PokeIdleLab - Hunt Analyzer Bridge
 // @namespace    pokeidlelab
-// @version      1.3.0
+// @version      1.4.0
 // @description  Envía el Hunt Analyzer real de PokéIdle a PokeIdleLab mediante el endpoint local.
 // @author       PokeIdleLab
 // ==/UserScript==
@@ -161,9 +161,23 @@
 
       status('enviando ' + kills + ' kills…');
 
-      // PokeGrid ejecuta los userscripts dentro de un WebView.
-      // fetch() hacia localhost puede quedar bloqueado por CORS/PNA.
-      // sendBeacon hace un POST sin necesitar leer la respuesta.
+      // PokeGrid es Electron: usa su puente IPC para salir del WebView.
+      // Así la petición la hace el proceso principal y no depende de CORS/PNA.
+      if (window.pokeAPI && typeof window.pokeAPI.pokeIdleLabSend === 'function') {
+        const result = await window.pokeAPI.pokeIdleLabSend(payload);
+
+        if (result && result.ok) {
+          lastSentKey = key;
+          status('ENVIADO ✓ · ' + kills + ' kills');
+          return;
+        }
+
+        warn('PokeGrid IPC rechazó el envío:', result);
+        status('ERROR IPC');
+        return;
+      }
+
+      // Compatibilidad con versiones antiguas de PokeGrid.
       try {
         const accepted = navigator.sendBeacon(
           ENDPOINT,
