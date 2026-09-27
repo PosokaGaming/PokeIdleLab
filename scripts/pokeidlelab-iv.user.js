@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PokeIdleLab Calculator
 // @namespace    poke-idle-lab
-// @version      1.0.55
+// @version      1.0.56
 // @description  Calculadora de IV para Poke Idle World, integrada con PokeGrid
 // @match        https://poke.idleworld.online/*
 // @grant        none
@@ -160,14 +160,9 @@ function installPokemonAnalyzerResize(box){
   h.className="pil-resize-handle";
   h.title="Arrastra para cambiar el tamaño";
   h.setAttribute("aria-label","Cambiar tamaño");
-  h.innerHTML='<span></span><span></span><span></span>';
-  h.style.cssText="position:absolute;right:3px;bottom:3px;width:24px;height:24px;z-index:20;cursor:nwse-resize;display:flex;align-items:flex-end;justify-content:flex-end;padding:0 2px 2px 0;touch-action:none;";
-  const hs=h.querySelectorAll("span");
-  hs.forEach((line,i)=>{
-    line.style.cssText="display:block;height:2px;background:#b29a38;opacity:.9;transform:rotate(-45deg);transform-origin:right center;box-shadow:0 0 3px rgba(238,193,62,.35);";
-    line.style.width=(8+i*4)+"px";
-    line.style.marginBottom=(i*4)+"px";
-  });
+  h.innerHTML="";
+  h.style.cssText="position:absolute;right:2px;bottom:2px;width:20px;height:20px;z-index:20;cursor:nwse-resize;overflow:hidden;border-radius:0 0 10px 0;background:repeating-linear-gradient(135deg,transparent 0,transparent 4px,rgba(178,154,56,.95) 4px,rgba(178,154,56,.95) 5px,transparent 5px,transparent 8px);touch-action:none;box-sizing:border-box;";
+
   box.appendChild(h);
   let resizing=false,startX=0,startY=0,startW=0,startH=0,startLeft=0,startTop=0;
   h.addEventListener("mousedown",e=>{
