@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PokeIdleLab - Hunt Analyzer Bridge
 // @namespace    pokeidlelab
-// @version      1.0.0
+// @version      1.1.0
 // @description  Envía el Hunt Analyzer real de PokéIdle a PokeIdleLab mediante el endpoint local.
 // @author       PokeIdleLab
 // ==/UserScript==
@@ -14,6 +14,11 @@
   let creatures = null;
   let lastSentKey = '';
 
+  const log = (...args) => console.log('[POKEIDLELAB BRIDGE]', ...args);
+  const warn = (...args) => console.warn('[POKEIDLELAB BRIDGE]', ...args);
+
+  log('Bridge iniciado. Endpoint:', ENDPOINT, 'Intervalo:', POLL_MS + 'ms');
+
   const slugify = (value) =>
     String(value || '')
       .toLowerCase()
@@ -24,12 +29,16 @@
 
   async function loadCreatures() {
     if (creatures) return creatures;
+    log('Cargando /game/creatures.json...');
     try {
       const response = await fetch('/game/creatures.json', { cache: 'no-store' });
+      log('creatures.json respondió:', response.status);
       const data = await response.json();
       creatures = Array.isArray(data?.creatures) ? data.creatures : [];
-    } catch {
+      log('Criaturas cargadas:', creatures.length);
+    } catch (error) {
       creatures = [];
+      warn('No se pudo cargar creatures.json:', error);
     }
     return creatures;
   }
@@ -37,7 +46,10 @@
   async function findTarget(slug) {
     const list = await loadCreatures();
     const wanted = slugify(slug);
-    if (!wanted) return null;
+    if (!wanted) {
+      warn('No hay slug de hunt.');
+      return null;
+    }
 
     const exact = list.find((c) => slugify(c?.name) === wanted);
     if (exact) return exact;
@@ -50,25 +62,69 @@
   }
 
   async function sendAnalyzer() {
+    log('Comprobando PokeGrid...');
+
     try {
       const P = window.__poke;
-      if (!P || !P.ws) return;
+
+      if (!P) {
+        warn('window.__poke NO existe.');
+        return;
+      }
+      log('__poke encontrado. Claves:', Object.keys(P));
+
+      if (!P.ws) {
+        warn('__poke.ws NO existe.');
+        return;
+      }
 
       const analyzer = P.ws.analyzer;
       const field = P.ws['field-init'];
       const slug = P.lastSlug || field?.slug || '';
-      if (!analyzer || !slug) return;
+
+      log('Estado:', {
+        analyzer: !!analyzer,
+        fieldInit: !!field,
+        lastSlug: P.lastSlug || null,
+        fieldSlug: field?.slug || null
+      });
+
+      if (!analyzer) {
+        warn('Hunt Analyzer todavía no está disponible.');
+        return;
+      }
+
+      if (!slug) {
+        warn('No se ha encontrado el slug de la hunt.');
+        return;
+      }
 
       const kills = Number(analyzer.kills);
       const elapsedSeconds = Number(analyzer.seconds);
       const xpGained = Number(analyzer.xpGained);
 
-      // Mismas condiciones mínimas que PokeIdleLab: sesión suficientemente estable.
-      if (!Number.isFinite(kills) || !Number.isFinite(elapsedSeconds)) return;
-      if (kills < 10 || elapsedSeconds < 300) return;
+      log('Analyzer:', { kills, elapsedSeconds, xpGained, slug });
+
+      if (!Number.isFinite(kills) || !Number.isFinite(elapsedSeconds)) {
+        warn('Kills/tiempo no son números válidos.');
+        return;
+      }
+
+      if (kills < 10 || elapsedSeconds < 300) {
+        log('Sesión todavía demasiado corta. Se requieren >=10 kills y >=300s.');
+        return;
+      }
 
       const target = await findTarget(slug);
-      if (!target || !Number.isFinite(Number(target.pokeId))) return;
+      if (!target) {
+        warn('No se encontró la criatura para slug:', slug);
+        return;
+      }
+
+      if (!Number.isFinite(Number(target.pokeId))) {
+        warn('La criatura encontrada no tiene pokeId válido:', target);
+        return;
+      }
 
       const payload = {
         source: 'pokegrid',
@@ -89,7 +145,12 @@
         payload.xpGained ?? ''
       ].join('|');
 
-      if (key === lastSentKey) return;
+      if (key === lastSentKey) {
+        log('Sin cambios desde el último envío.');
+        return;
+      }
+
+      log('Enviando datos al servidor local...', payload);
 
       const response = await fetch(ENDPOINT, {
         method: 'POST',
@@ -98,9 +159,16 @@
         body: JSON.stringify(payload)
       });
 
-      if (response.ok) lastSentKey = key;
-    } catch {
-      // El bridge es opcional: si PokeIdleLab no está abierto, el juego sigue funcionando.
+      log('Respuesta del servidor:', response.status, response.statusText);
+
+      if (response.ok) {
+        lastSentKey = key;
+        log('ENVÍO CORRECTO.');
+      } else {
+        warn('El servidor rechazó el envío.');
+      }
+    } catch (error) {
+      warn('ERROR durante la comprobación/envío:', error);
     }
   }
 
