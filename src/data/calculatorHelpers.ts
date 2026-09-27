@@ -98,19 +98,53 @@ export function calculatePower(
   return Math.round(sum * quality);
 }
 
+function baseCurveXp(L: number): number {
+  return L <= 1 ? 0 : Math.round((50 / 3) * (L ** 3 - 6 * L ** 2 + 17 * L - 12));
+}
+
 /**
- * Curva de XP oficial de https://poke.idleworld.online:
- * XP total para nivel L = round( 50/3 × (L³ − 6L² + 17L − 12) )
+ * Curva de XP oficial de https://poke.idleworld.online (totalXpForLevel del
+ * cliente del juego), la misma para entrenador y Pokémon:
+ *   - hasta Lv.150: round( 50/3 × (L³ − 6L² + 17L − 12) )
+ *   - Lv.151-250: la base de Lv.150 más un tramo polinómico propio
+ *   - desde Lv.251: el doble de la pendiente de la curva base
+ * Comprobada contra el juego: 2.609.068.205 XP = Pokémon Lv.437 y
+ * 3.282.781.168 XP = entrenador Lv.470.
  */
 export function calculateTotalXp(level: number): number {
-  if (level <= 1) return 0;
-  const L = level;
-  const val = (50 / 3) * (Math.pow(L, 3) - 6 * Math.pow(L, 2) + 17 * L - 12);
-  return Math.max(0, Math.round(val));
+  const L = Math.floor(level);
+  if (L <= 150) return baseCurveXp(L);
+  const t = L - 150;
+  if (t <= 100) {
+    const tri = (t * (t + 1)) / 2;
+    return Math.round(
+      baseCurveXp(150) + 0.5 * tri ** 2 + ((t * (t + 1) * (2 * t + 1)) / 6) * 197.5 + tri * 25629 + 1087900 * t
+    );
+  }
+  return Math.round(calculateTotalXp(250) + 2 * (baseCurveXp(L) - baseCurveXp(250)));
 }
 
 export function calculateXpToNextLevel(level: number): number {
   return calculateTotalXp(level + 1) - calculateTotalXp(level);
+}
+
+/** Nivel alcanzado con una XP total, y la XP dentro de ese nivel (cur) sobre la necesaria (max). */
+export function getLevelProgress(totalXp: number): { level: number; cur: number; max: number } {
+  let hi = 2;
+  while (hi < 1e7 && calculateTotalXp(hi) <= totalXp) hi *= 2;
+  let lo = Math.max(1, Math.floor(hi / 2));
+  let level = lo;
+  while (lo <= hi) {
+    const mid = Math.floor((lo + hi) / 2);
+    if (calculateTotalXp(mid) <= totalXp) {
+      level = mid;
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  const base = calculateTotalXp(level);
+  return { level, cur: Math.max(0, totalXp - base), max: Math.max(1, calculateTotalXp(level + 1) - base) };
 }
 
 /**

@@ -10,6 +10,7 @@ import App from '../App';
 import appCss from '../index.css?inline';
 import '../../scripts/pokeidlelab-iv.user.js';
 import '../../scripts/pokeidlelab-market-sales.user.js';
+import { installHuntLevelUp } from './huntLevelUp';
 
 const HOST_ID = 'pokeidlelab-extension';
 const FONTS_URL =
@@ -133,6 +134,8 @@ function mount(): void {
   // Le indica a la web que corre dentro del juego (p. ej. el bridge de
   // calibración no debe consultar /api en el servidor de poke.idleworld.online).
   (window as Window & { __POKEIDLELAB_EXTENSION__?: boolean }).__POKEIDLELAB_EXTENSION__ = true;
+  // XP y tiempo para subir de nivel dentro del Hunt Analyzer del juego.
+  installHuntLevelUp();
 
   const host = document.createElement('div');
   host.id = HOST_ID;
