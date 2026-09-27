@@ -22,7 +22,7 @@ Para actualizar: bajá el repo de nuevo, reemplazá la carpeta y tocá **↻** e
 ## Instalar con Tampermonkey (se actualiza solo)
 
 1. Instalá [Tampermonkey](https://www.tampermonkey.net/). En Chrome y Edge, en los detalles de Tampermonkey activá **«Permitir scripts de usuario»**.
-2. Abrí [pokeidlelab.user.js](https://raw.githubusercontent.com/GigaBuda/PokeIdleLab/main/extension/pokeidlelab.user.js) y aceptá **Instalar**.
+2. Abrí [pokeidlelab.user.js](https://raw.githubusercontent.com/PosokaGaming/PokeIdleLab/main/extension/pokeidlelab.user.js) y aceptá **Instalar**.
 
 Si tenías instalados los scripts sueltos del Analyzer o de ventas, desactivalos: la extensión ya los trae.
 
