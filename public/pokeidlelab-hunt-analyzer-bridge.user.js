@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PokeIdleLab - Hunt Analyzer Bridge
 // @namespace    pokeidlelab
-// @version      1.2.0
+// @version      1.3.0
 // @description  Envía el Hunt Analyzer real de PokéIdle a PokeIdleLab mediante el endpoint local.
 // @author       PokeIdleLab
 // ==/UserScript==
@@ -161,34 +161,28 @@
 
       status('enviando ' + kills + ' kills…');
 
+      // PokeGrid ejecuta los userscripts dentro de un WebView.
+      // fetch() hacia localhost puede quedar bloqueado por CORS/PNA.
+      // sendBeacon hace un POST sin necesitar leer la respuesta.
       try {
-        const response = await fetch(ENDPOINT, {
-          method: 'POST',
-          mode: 'cors',
-          headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
-          body: JSON.stringify(payload)
-        });
+        const accepted = navigator.sendBeacon(
+          ENDPOINT,
+          new Blob(
+            [JSON.stringify(payload)],
+            { type: 'text/plain;charset=UTF-8' }
+          )
+        );
 
-        if (response.ok) {
+        if (accepted) {
           lastSentKey = key;
           status('ENVIADO ✓ · ' + kills + ' kills');
           return;
         }
 
-        warn('Servidor respondió:', response.status);
-      } catch (corsError) {
-        warn('CORS/PNA rechazó la petición; probando no-cors:', corsError);
-        await fetch(ENDPOINT, {
-          method: 'POST',
-          mode: 'no-cors',
-          headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
-          body: JSON.stringify(payload)
-        });
-        lastSentKey = key;
-        status('ENVIADO ✓ · respuesta opaca');
-        return;
+        warn('sendBeacon no aceptó la petición.');
+      } catch (beaconError) {
+        warn('sendBeacon falló:', beaconError);
       }
-
       status('ERROR HTTP');
     } catch (error) {
       warn('ERROR durante la comprobación/envío:', error);
