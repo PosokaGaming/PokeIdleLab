@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PokeIdleLab Calculator
 // @namespace    poke-idle-lab
-// @version      1.0.54
+// @version      1.0.55
 // @description  Calculadora de IV para Poke Idle World, integrada con PokeGrid
 // @match        https://poke.idleworld.online/*
 // @grant        none
@@ -34,7 +34,7 @@ function panel(){
 if(document.getElementById(CFG.panelId))return;
 const s=document.createElement("style");
 s.textContent=`
-#${CFG.panelId}{position:fixed;z-index:2147483647;top:50%;left:50%;transform:translate(-50%,-50%);width:min(440px,calc(100vw - 20px));height:min(810px,calc(100vh - 20px));min-width:420px;min-height:520px;max-width:calc(100vw - 12px);max-height:calc(100vh - 12px);overflow:visible;resize:both;background:linear-gradient(180deg,#10262b 0%,#0c1c20 52%,#111d1c 100%);color:#dce9e4;border:1px solid #b29a38;border-radius:2px;box-shadow:0 18px 50px rgba(0,0,0,.75),inset 0 1px 0 rgba(255,255,255,.05),inset 0 0 0 1px rgba(0,0,0,.45),0 0 0 1px rgba(238,193,62,.18);font:12px Arial,sans-serif;display:none}
+#${CFG.panelId}{position:fixed;z-index:2147483647;top:50%;left:50%;transform:translate(-50%,-50%);width:min(440px,calc(100vw - 20px));height:min(810px,calc(100vh - 20px));min-width:420px;min-height:520px;max-width:calc(100vw - 12px);max-height:calc(100vh - 12px);overflow:visible;resize:none;background:linear-gradient(180deg,#10262b 0%,#0c1c20 52%,#111d1c 100%);color:#dce9e4;border:1px solid #b29a38;border-radius:2px 2px 14px 14px;box-shadow:0 18px 50px rgba(0,0,0,.75),inset 0 1px 0 rgba(255,255,255,.05),inset 0 0 0 1px rgba(0,0,0,.45),0 0 0 1px rgba(238,193,62,.18);font:12px Arial,sans-serif;display:none}
 #${CFG.panelId} *{box-sizing:border-box}
 #${CFG.panelId} .pa-topbar{height:45px;width:calc(100% + 56px);margin:-1px -28px 11px;position:relative;display:flex;align-items:center;justify-content:center;background:linear-gradient(180deg,#e9c04b 0%,#9a7427 100%);clip-path:polygon(18px 0,calc(100% - 18px) 0,100% 12px,100% calc(100% - 12px),calc(100% - 18px) 100%,18px 100%,0 calc(100% - 12px),0 12px);box-shadow:0 3px 10px rgba(0,0,0,.65);color:#e8c85a;font-size:14px;font-family:Georgia,"Times New Roman",serif;font-weight:700;letter-spacing:.3px;overflow:visible}#${CFG.panelId} .pa-topbar:after{content:"";position:absolute;inset:3px;background:linear-gradient(180deg,#10272d,#07161a 72%,#0d2024);clip-path:polygon(15px 0,calc(100% - 15px) 0,100% 9px,100% calc(100% - 9px),calc(100% - 15px) 100%,15px 100%,0 calc(100% - 9px),0 9px);pointer-events:none;z-index:0;box-shadow:inset 0 -1px 0 rgba(238,193,62,.4)}#${CFG.panelId} .pa-title{display:flex;align-items:center;gap:6px;position:relative;z-index:2;text-shadow:0 1px 0 #5b4317}#${CFG.panelId} .pa-gem{position:absolute;top:50%;width:13px;height:13px;transform:translateY(-50%) rotate(45deg);background:linear-gradient(135deg,#8df8f0,#00bfc8);border:1px solid #5ce7df;box-shadow:0 0 8px rgba(0,220,220,.75);z-index:3;pointer-events:none}.pa-gem-left{left:10px}.pa-gem-right{right:10px}#${CFG.panelId} .pa-title-icon{font-size:12px;color:#e4c84b}#${CFG.panelId} .pa-close{position:absolute;right:31px;top:10px;width:22px;height:22px;z-index:3;border:1px solid #405a58;border-radius:3px;background:linear-gradient(180deg,#163139,#10262b);color:#aebeba;font-size:17px;line-height:20px;cursor:pointer;padding:0;display:flex;align-items:center;justify-content:center}#${CFG.panelId} .pa-close:hover{color:#fff;border-color:#8f7a32;background:#16353a}#${CFG.panelId} .pa-tabs{display:grid;grid-template-columns:1fr;gap:5px;margin:0 0 8px}#${CFG.panelId} .pa-tab{height:25px;border:1px solid #29474a;border-radius:4px;background:linear-gradient(180deg,#163139,#11272d);color:#9bb0ad;font-size:10px;font-weight:800;text-align:center;line-height:23px;box-shadow:inset 0 1px 0 rgba(255,255,255,.035)}#${CFG.panelId} .pa-tab:first-child{color:#aebeba}#${CFG.panelId} .jp-wrap{padding:9px 12px 10px;height:calc(100% - 56px);overflow-y:auto;overflow-x:hidden;scrollbar-width:thin;scrollbar-color:#3d5a57 #0b1718}
 #${CFG.panelId} .jp-head{display:grid;grid-template-columns:205px 1fr;gap:10px;align-items:stretch;padding-bottom:8px;border-bottom:1px solid #526b68}
@@ -153,7 +153,53 @@ function optimizerRows(p){const d=calc(p||{}),a=d.creature||creatures.find(x=>no
 async function showXpOptimizer(p){if(!creatures.length)await load();const box=document.getElementById(CFG.panelId),wrap=box?.querySelector(".jp-wrap"),el=document.getElementById("pil-content");if(!box||!wrap||!el)return;const rows=optimizerRows(p),top=rows.slice(0,80),a=p?.creature||{};let h='<div class="xp-head"><button type="button" class="xp-back">← Pokémon</button><div><div class="xp-title">⚡ Optimizador EXP</div><div class="xp-sub">Datos del juego · '+esc(a.name||p.name)+' Nv '+esc(p.level)+' · IV '+esc(p.ivObserved||p.total||0)+'/192 · Calidad ×'+Number(p.quality||1).toFixed(2)+'</div></div></div><div class="xp-controls"><label><input type="checkbox" class="xp-vip"> VIP +50%</label><label><input type="checkbox" class="xp-double"> Evento x2</label><input class="xp-search" placeholder="Buscar Pokémon o nivel..."></div><div class="xp-summary"><div><b>'+top.length+'</b><span>hunts disponibles</span></div><div><b>'+(top[0]?Math.round(top[0].xpHour).toLocaleString("es-ES"):"—")+'</b><span>XP/h estimada</span></div><div><b>'+(top[0]?esc(top[0].name):"—")+'</b><span>mayor XP/h</span></div></div><div class="xp-list"><div class="xp-row xp-header"><span>HUNT</span><span>NIVEL</span><span>XP/KILL</span><span>EFECTIVIDAD</span><span>COMBATE</span><span>XP/H</span></div>';top.forEach(r=>{h+='<div class="xp-row" data-xp-name="'+esc(norm(r.name))+'" data-xp-level="'+r.huntLevel+'"><span><b>#'+r.id+' '+esc(r.name)+'</b><small>'+esc(r.type1||"")+(r.type2?" / "+esc(r.type2):"")+(r.calibrated?" · "+esc(r.calibrationSource||"calibrado"):" · estimado")+'</small></span><span>'+r.huntLevel+'</span><span>'+Math.round(r.xpPerKill).toLocaleString("es-ES")+'</span><span>'+formatEffectiveness(r.effectiveness)+'</span><span class="xp-combat"><b>'+Math.round(r.combatDamage||0).toLocaleString("es-ES")+'</b> daño · '+(r.combatHits||0)+' golpes · '+Number(r.cycle||0).toFixed(2).replace(".",",")+'s<small>HP '+Math.round(r.combatHp||0).toLocaleString("es-ES")+' · Def '+Math.round(r.combatDef||0).toLocaleString("es-ES")+'</small></span><strong>'+Math.round(r.xpHour).toLocaleString("es-ES")+'</strong></div>'});h+='</div>';h+='<div class="xp-ranking"><div class="xp-ranking-title">🏆 Top 10 — Mejores zonas de Hunt para tu Pokémon</div><div class="xp-ranking-sub">Calculado según el Pokémon que estás mirando: nivel, IV, calidad, stats y movimientos.</div><div class="xp-rank-grid"><div class="xp-rank-head"><span>#</span><span>HUNT / ZONA</span><span>NIVEL</span><span>EFECTIVIDAD</span><span>XP/H</span></div>';top.slice(0,10).forEach((r,i)=>{h+='<div class="xp-rank-row"><b>'+(i+1)+'</b><span><strong>'+esc(r.name)+'</strong><small>#'+r.id+(r.calibrated?" · calibrado":" · estimado")+'</small></span><span>'+r.huntLevel+'</span><span>'+formatEffectiveness(r.effectiveness)+'</span><strong>'+Math.round(r.xpHour).toLocaleString("es-ES")+'</strong></div>'});h+='</div></div>';el.innerHTML=h;wrap.scrollTop=0;const recalc=()=>{const mult=(el.querySelector(".xp-vip")?.checked?1.5:1)*(el.querySelector(".xp-double")?.checked?2:1);el.querySelectorAll(".xp-row[data-xp-name]").forEach((row,i)=>{const r=top[i],strong=row.querySelector("strong");if(r&&strong)strong.textContent=Math.round(r.xpHour*mult).toLocaleString("es-ES")})};el.querySelector(".xp-vip")?.addEventListener("change",recalc);el.querySelector(".xp-double")?.addEventListener("change",recalc);el.querySelector(".xp-search")?.addEventListener("input",e=>{const q=norm(e.target.value);el.querySelectorAll(".xp-row[data-xp-name]").forEach(row=>row.style.display=(!q||row.dataset.xpName.includes(q)||row.dataset.xpLevel.includes(q))?"grid":"none")});el.querySelector(".xp-back")?.addEventListener("click",()=>render(current))}
 function publishAttackerSnapshot(p){try{const d=calc(p||{}),c=d.creature||{};window.__pokeIdleLabAttacker={id:Number(c.id)||undefined,name:d.name,level:Number(d.level)||undefined,quality:Number(d.quality)||undefined,ivTotal:Number(d.total)||undefined,ivPercent:Number(d.pct)||undefined,ivs:d.ivs||{},stats:d.stats||{},bases:d.bases||{},type1:c.type1||undefined,type2:c.type2||undefined,moves:Array.isArray(c.attacks)?c.attacks.map(m=>({name:m.name,type:m.type,power:Number(m.power)||0,learnLevel:Number(m.learnLevel)||0,tm:m.tm??null})):[],updatedAt:Date.now()}}catch{}}
 function scan(){const tips=[...document.querySelectorAll(".inv-tip")].filter(t=>{const s=getComputedStyle(t),r=t.getBoundingClientRect();return s.display!=="none"&&s.visibility!=="hidden"&&+s.opacity>0&&r.width>0&&r.height>0});const tip=tips.find(t=>{const tx=t.innerText||"";return !/\b(?:LOOT|ITEM|RECURSO|POK[EÉ]\s*BALL|POK[EÉ]BALL)\b/i.test(tx)&&!/(?:\$\s*\d[\d.,]*|\d[\d.,]*\s*dollars?)\b/i.test(tx)})||tips[0];if(!tip){return}const text=tip.innerText||"";if(/\b(?:LOOT|ITEM|RECURSO|POK[EÉ]\s*BALL|POK[EÉ]BALL)\b/i.test(text)||/(?:\$\s*\d[\d.,]*|\d[\d.,]*\s*dollars?)\b/i.test(text)){document.getElementById(CFG.panelId)?.style.setProperty("display","none");lastPokemonTooltip=null;lastText="";current=null;return}const p=parse(text,tip);if(!p){document.getElementById(CFG.panelId)?.style.setProperty("display","none");lastPokemonTooltip=null;lastText="";current=null;return}p.spriteSrc=findSpriteSrc(tip)||"";if(tip!==lastPokemonTooltip||text!==lastText){lastPokemonTooltip=tip;lastText=text;current=p;publishAttackerSnapshot(p);render(p);hydratePokemon(p).then(()=>{if(current===p){p.spriteSrc=p.spriteSrc||findSpriteSrc(tip);publishAttackerSnapshot(p);render(p)}})}}
-new MutationObserver(scan).observe(document.body,{childList:true,subtree:true,characterData:true,attributes:true});document.addEventListener("mouseover",e=>{if(e.target.closest?.(".inv-tip"))setTimeout(scan,1000)},true);setInterval(scan,1000);panel();load();
+new MutationObserver(scan).observe(document.body,{childList:true,subtree:true,characterData:true,attributes:true});document.addEventListener("mouseover",e=>{if(e.target.closest?.(".inv-tip"))setTimeout(scan,1000)},true);setInterval(scan,1000);panel();load();setTimeout(()=>installPokemonAnalyzerResize(document.getElementById(CFG.panelId)),0);
+function installPokemonAnalyzerResize(box){
+  if(!box||box.querySelector(".pil-resize-handle"))return;
+  const h=document.createElement("div");
+  h.className="pil-resize-handle";
+  h.title="Arrastra para cambiar el tamaño";
+  h.setAttribute("aria-label","Cambiar tamaño");
+  h.innerHTML='<span></span><span></span><span></span>';
+  h.style.cssText="position:absolute;right:3px;bottom:3px;width:24px;height:24px;z-index:20;cursor:nwse-resize;display:flex;align-items:flex-end;justify-content:flex-end;padding:0 2px 2px 0;touch-action:none;";
+  const hs=h.querySelectorAll("span");
+  hs.forEach((line,i)=>{
+    line.style.cssText="display:block;height:2px;background:#b29a38;opacity:.9;transform:rotate(-45deg);transform-origin:right center;box-shadow:0 0 3px rgba(238,193,62,.35);";
+    line.style.width=(8+i*4)+"px";
+    line.style.marginBottom=(i*4)+"px";
+  });
+  box.appendChild(h);
+  let resizing=false,startX=0,startY=0,startW=0,startH=0,startLeft=0,startTop=0;
+  h.addEventListener("mousedown",e=>{
+    if(e.button!==0)return;
+    e.preventDefault();
+    e.stopPropagation();
+    const r=box.getBoundingClientRect();
+    resizing=true;startX=e.clientX;startY=e.clientY;startW=r.width;startH=r.height;startLeft=r.left;startTop=r.top;
+    document.body.style.userSelect="none";
+    document.body.style.cursor="nwse-resize";
+  });
+  const move=e=>{
+    if(!resizing)return;
+    const minW=420,minH=520,maxW=Math.max(minW,innerWidth-12),maxH=Math.max(minH,innerHeight-12);
+    const w=Math.round(Math.max(minW,Math.min(maxW,startW+(e.clientX-startX))));
+    const ht=Math.round(Math.max(minH,Math.min(maxH,startH+(e.clientY-startY))));
+    const dx=(w-startW)/2,dy=(ht-startH)/2;
+    box.style.width=w+"px";
+    box.style.height=ht+"px";
+    box.style.left=Math.round(startLeft-dx)+"px";
+    box.style.top=Math.round(startTop-dy)+"px";
+    box.style.transform="none";
+  };
+  const up=()=>{
+    if(!resizing)return;
+    resizing=false;
+    document.body.style.userSelect="";
+    document.body.style.cursor="";
+  };
+  document.addEventListener("mousemove",move,true);
+  document.addEventListener("mouseup",up,true);
+}
 const POKEIDLELAB_UI_SCALE={small:.9,medium:1,large:1.1};let pokeidlelabUiMode=null,pokeidlelabUiScale=1;
 function pokeidlelabUiModeOf(v){const s=String(v||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/\s+/g," ").trim();if(/^(pequeno|pequena|small|sm|s)$/.test(s))return"small";if(/^(medio|media|medium|md|m|normal|default)$/.test(s))return"medium";if(/^(grande|large|lg|l)$/.test(s))return"large";return null}
 function pokeidlelabUiApply(mode){const box=document.getElementById(CFG.panelId),scale=POKEIDLELAB_UI_SCALE[mode];if(!box||!scale||mode===pokeidlelabUiMode)return;const r=box.getBoundingClientRect(),factor=scale/pokeidlelabUiScale,maxW=Math.max(420,innerWidth-12),maxH=Math.max(520,innerHeight-12);box.style.width=Math.round(Math.max(420,Math.min(maxW,r.width*factor)))+"px";box.style.height=Math.round(Math.max(520,Math.min(maxH,r.height*factor)))+"px";pokeidlelabUiMode=mode;pokeidlelabUiScale=scale}
