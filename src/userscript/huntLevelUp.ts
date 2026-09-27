@@ -153,7 +153,7 @@ function render(): void {
   const xpPerHour = perKill * state.killsPerHour;
   if (xpPerHour > 0) {
     const minutes = (remaining / xpPerHour) * 60;
-    const eta = new Date(Date.now() + minutes * 60000).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+    const eta = new Date(Date.now() + minutes * 60000).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false });
     setCard(
       timeCard,
       `~${formatDuration(minutes)}`,
