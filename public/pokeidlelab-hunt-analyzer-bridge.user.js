@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PokeIdleLab - Hunt Analyzer Bridge
 // @namespace    pokeidlelab
-// @version      1.4.0
+// @version      1.5.0
 // @description  Envía el Hunt Analyzer real de PokéIdle a PokeIdleLab mediante el endpoint local.
 // @author       PokeIdleLab
 // ==/UserScript==
@@ -161,9 +161,15 @@
 
       status('enviando ' + kills + ' kills…');
 
-      // PokeGrid es Electron: usa su puente IPC para salir del WebView.
-      // Así la petición la hace el proceso principal y no depende de CORS/PNA.
-      if (window.pokeAPI && typeof window.pokeAPI.pokeIdleLabSend === 'function') {
+      // El envío debe pasar por el IPC de PokeGrid. No usamos sendBeacon como
+      // falso positivo: solo mostramos ENVIADO cuando el proceso principal confirma HTTP 2xx.
+      if (!window.pokeAPI || typeof window.pokeAPI.pokeIdleLabSend !== 'function') {
+        warn('El preload IPC de PokeGrid no está disponible.');
+        status('ERROR: IPC PokeGrid');
+        return;
+      }
+
+      try {
         const result = await window.pokeAPI.pokeIdleLabSend(payload);
 
         if (result && result.ok) {
@@ -175,27 +181,10 @@
         warn('PokeGrid IPC rechazó el envío:', result);
         status('ERROR IPC');
         return;
-      }
-
-      // Compatibilidad con versiones antiguas de PokeGrid.
-      try {
-        const accepted = navigator.sendBeacon(
-          ENDPOINT,
-          new Blob(
-            [JSON.stringify(payload)],
-            { type: 'text/plain;charset=UTF-8' }
-          )
-        );
-
-        if (accepted) {
-          lastSentKey = key;
-          status('ENVIADO ✓ · ' + kills + ' kills');
-          return;
-        }
-
-        warn('sendBeacon no aceptó la petición.');
-      } catch (beaconError) {
-        warn('sendBeacon falló:', beaconError);
+      } catch (ipcError) {
+        warn('Error llamando al IPC de PokeGrid:', ipcError);
+        status('ERROR IPC');
+        return;
       }
       status('ERROR HTTP');
     } catch (error) {
