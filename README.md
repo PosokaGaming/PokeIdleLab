@@ -1,6 +1,6 @@
 # PokéIdle Compendium (PokeIdleLab)
 
-Enciclopedia y optimizador **no oficial** para [poke.idleworld.online](https://poke.idleworld.online/), que se usa **dentro del juego** como extensión: aparece la pestaña **PokeIdleLab** en el borde derecho (se cierra con **×** o **Esc**).
+Enciclopedia y optimizador **no oficial** para [poke.idleworld.online](https://poke.idleworld.online/), que se usa **dentro del juego** como extensión: se abre y se cierra con **Ctrl+P** (o la pestaña **PokeIdleLab** del borde derecho), y también se cierra con **Esc**.
 
 ## Características
 

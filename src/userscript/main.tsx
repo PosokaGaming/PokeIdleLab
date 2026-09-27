@@ -48,6 +48,20 @@ function Extension({ host }: { host: HTMLElement }) {
     if (open) setMounted(true);
   }, [open]);
 
+  // Ctrl+P (Cmd+P en Mac) abre y cierra la ventana desde cualquier lugar del
+  // juego. Se registra primero y en captura: le gana al diálogo de imprimir
+  // del navegador y a los atajos del juego.
+  useEffect(() => {
+    const onToggleKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.key.toLowerCase() !== 'p') return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (!e.repeat) setOpen((o) => !o);
+    };
+    window.addEventListener('keydown', onToggleKey, true);
+    return () => window.removeEventListener('keydown', onToggleKey, true);
+  }, []);
+
   useEffect(() => {
     if (!open) return;
     dialogRef.current?.focus();
@@ -72,7 +86,7 @@ function Extension({ host }: { host: HTMLElement }) {
         <button
           type="button"
           onClick={() => setOpen(true)}
-          title="Abrir PokeIdleLab"
+          title="Abrir PokeIdleLab (Ctrl+P)"
           className="fixed right-0 top-1/2 -translate-y-1/2 rounded-l-lg border border-r-0 border-amber-500/40 bg-[#090b10]/90 px-1.5 py-3 text-[11px] font-bold tracking-wider text-amber-300 shadow-lg shadow-black/50 hover:bg-[#12161f] [writing-mode:vertical-rl]"
         >
           PokeIdleLab
@@ -99,7 +113,7 @@ function Extension({ host }: { host: HTMLElement }) {
             <button
               type="button"
               onClick={() => setOpen(false)}
-              title="Cerrar (Esc)"
+              title="Cerrar (Esc o Ctrl+P)"
               className="absolute right-3 top-3 z-50 rounded-lg border border-slate-700 bg-slate-900/90 p-1.5 text-slate-300 hover:border-amber-500/50 hover:text-white"
             >
               <X className="h-4 w-4" />
