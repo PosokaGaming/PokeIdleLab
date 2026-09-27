@@ -201,11 +201,21 @@ export interface PokeGridCalibrationMessage {
 export function installHuntCalibrationBridge(): () => void {
   if (typeof window === 'undefined') return () => undefined;
 
-  const handler = (event: MessageEvent<PokeGridCalibrationMessage>) => {
-    const data = event.data;
+  let lastRemoteKey = '';
+
+  const apply = (data: PokeGridCalibrationMessage) => {
     if (!data || data.type !== 'POKEGRID_HUNT_CALIBRATION') return;
-    if (event.source !== window || event.origin !== window.location.origin) return;
-    recordHuntCalibration({
+    const key = [
+      data.targetId,
+      data.huntLevel || 0,
+      data.kills,
+      data.elapsedSeconds,
+      data.xpGained ?? ''
+    ].join('|');
+    if (key === lastRemoteKey) return;
+    lastRemoteKey = key;
+
+    const sample = recordHuntCalibration({
       targetId: data.targetId,
       huntLevel: data.huntLevel || 0,
       kills: data.kills,
@@ -214,9 +224,54 @@ export function installHuntCalibrationBridge(): () => void {
       leaderId: data.leaderId,
       leaderKey: data.leaderKey
     });
-    window.dispatchEvent(new CustomEvent('pokeidlelab:calibration-updated'));
+    if (sample) {
+      window.dispatchEvent(new CustomEvent('pokeidlelab:calibration-updated'));
+    }
+  };
+
+  const handler = (event: MessageEvent<PokeGridCalibrationMessage>) => {
+    const data = event.data;
+    if (!data || data.type !== 'POKEGRID_HUNT_CALIBRATION') return;
+    if (event.source !== window || event.origin !== window.location.origin) return;
+    apply(data);
   };
 
   window.addEventListener('message', handler);
-  return () => window.removeEventListener('message', handler);
+
+  let stopped = false;
+  let timer: ReturnType<typeof window.setTimeout> | undefined;
+
+  const poll = async () => {
+    if (stopped) return;
+    try {
+      const response = await fetch('/api/pokegrid-hunt', { cache: 'no-store' });
+      if (response.ok) {
+        const data = await response.json();
+        if (data && data.source === 'pokegrid') {
+          apply({
+            type: 'POKEGRID_HUNT_CALIBRATION',
+            targetId: Number(data.targetId),
+            huntLevel: Number(data.huntLevel) || 0,
+            kills: Number(data.kills),
+            elapsedSeconds: Number(data.elapsedSeconds),
+            xpGained: data.xpGained === undefined ? undefined : Number(data.xpGained),
+            leaderId: data.leaderId === undefined ? undefined : Number(data.leaderId),
+            leaderKey: data.leaderKey
+          });
+        }
+      }
+    } catch {
+      // PokeGrid no está conectado o el servidor local aún no está disponible.
+    } finally {
+      if (!stopped) timer = window.setTimeout(poll, 5000);
+    }
+  };
+
+  poll();
+
+  return () => {
+    stopped = true;
+    window.removeEventListener('message', handler);
+    if (timer !== undefined) window.clearTimeout(timer);
+  };
 }
